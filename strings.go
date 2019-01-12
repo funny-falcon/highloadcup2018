@@ -94,6 +94,9 @@ func (us *StringsTable) Insert(s string) (uint32, bool) {
 }
 
 func (us *StringsTable) Find(s string) uint32 {
+	if s == "" {
+		return 0
+	}
 	h := hash(s)
 	mask := uint32(len(us.Tbl) - 1)
 	pos, d := h&mask, uint32(1)

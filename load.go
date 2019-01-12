@@ -76,6 +76,9 @@ func Load() {
 				}
 				var ok bool
 				acc := SureAccount(int32(accin.Id))
+				if MaxId < acc.Uid {
+					MaxId = acc.Uid
+				}
 				acc.Birth = accin.Birth
 				byear := GetBirthYear(acc.Birth)
 				BirthYearIndexes[byear].Set(acc.Uid)
@@ -107,7 +110,7 @@ func Load() {
 				acc.EmailStart = GetEmailStart(accin.Email)
 				domain := DomainFromEmail(accin.Email)
 				acc.Domain = uint8(DomainsStrings.Add(domain, acc.Uid))
-				EmailCharsIndexes[accin.Email[0]].Set(acc.Uid)
+				IndexGtLtEmail(accin.Email, acc.Uid, true)
 				if accin.Phone != "" {
 					acc.Phone, ok = EmailIndex.InsertUid(accin.Phone, acc.Uid)
 					if !ok {

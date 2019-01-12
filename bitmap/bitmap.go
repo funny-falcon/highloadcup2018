@@ -76,6 +76,10 @@ func Wrap(al alloc.Allocator, ptr *alloc.Ptr, pat interface{}) *Wrapper {
 	return wr
 }
 
+func (w *Wrapper) IsEmpty() bool {
+	return *w.Ptr == 0
+}
+
 func (w *Wrapper) Set(i int32) {
 	w.Lock()
 	w.remap(w.Bitmap.Set(w.Alloc, *w.Ptr, i))

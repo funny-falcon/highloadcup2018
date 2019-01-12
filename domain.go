@@ -65,6 +65,7 @@ func (acc *Account) SetInterest(ix uint32) {
 }
 
 var Accounts []Account
+var MaxId int32
 
 func SureAccount(i int32) *Account {
 	if int(i) >= len(Accounts) {
@@ -125,13 +126,49 @@ var InterestsIndexes = func() []*bitmap.Wrapper {
 	return res
 }()
 
-var EmailCharsIndexes = func() []*bitmap.Wrapper {
-	res := make([]*bitmap.Wrapper, 256)
+var EmailGtIndexes = func() []*bitmap.Wrapper {
+	res := make([]*bitmap.Wrapper, 26)
 	for i := range res {
 		res[i] = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
 	}
 	return res
 }()
+
+var EmailLtIndexes = func() []*bitmap.Wrapper {
+	res := make([]*bitmap.Wrapper, 26)
+	for i := range res {
+		res[i] = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
+	}
+	return res
+}()
+
+func IndexGtLtEmail(e string, uid int32, set bool) {
+	ch := e[0]
+	// lt
+	start, end := int(ch)-'a', 25
+	if start < 0 {
+		start = 0
+	}
+	for ; start <= end; start++ {
+		if set {
+			EmailLtIndexes[start].Set(uid)
+		} else {
+			EmailLtIndexes[start].Unset(uid)
+		}
+	}
+	// gt
+	start, end = 0, int(ch)-'a'
+	if end > 25 {
+		end = 25
+	}
+	for ; start <= end; start++ {
+		if set {
+			EmailGtIndexes[start].Set(uid)
+		} else {
+			EmailGtIndexes[start].Unset(uid)
+		}
+	}
+}
 
 var BirthYearIndexes = func() []*bitmap.Wrapper {
 	res := make([]*bitmap.Wrapper, 60)
