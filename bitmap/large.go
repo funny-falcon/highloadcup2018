@@ -97,7 +97,7 @@ func (ch *LargeChunk) Set(allocator alloc.Allocator, ix uint8) {
 		if cnt == 4 {
 			ch.chnkAndCnt |= 256
 			ptr := allocator.Alloc(32)
-			var mask *LargeChunkMask
+			var mask *Block
 			allocator.Get(ptr, &mask)
 			mask.Set(ch.refsmall[0])
 			mask.Set(ch.refsmall[1])
@@ -114,7 +114,7 @@ func (ch *LargeChunk) Set(allocator alloc.Allocator, ix uint8) {
 		ch.chnkAndCnt++
 	default:
 		ptr := binary.LittleEndian.Uint32(ch.refsmall[:])
-		var mask *LargeChunkMask
+		var mask *Block
 		allocator.Get(alloc.Ptr(ptr), &mask)
 		if mask.Set(ix) {
 			ch.chnkAndCnt++
@@ -140,7 +140,7 @@ func (ch *LargeChunk) Unset(allocator alloc.Allocator, ix uint8) bool {
 		}
 	default:
 		ptr := alloc.Ptr(binary.LittleEndian.Uint32(ch.refsmall[:]))
-		var mask *LargeChunkMask
+		var mask *Block
 		allocator.Get(ptr, &mask)
 		if mask.Unset(ix) {
 			if ch.chnkAndCnt&255 == 0 {
@@ -154,45 +154,7 @@ func (ch *LargeChunk) Unset(allocator alloc.Allocator, ix uint8) bool {
 }
 
 func (ch *LargeChunk) LastSpan(al alloc.Allocator) int32 {
-	base := (ch.chnkAndCnt &^ 511) >> 1
-	switch ch.chnkAndCnt & 256 {
-	case 0:
-		return base + int32(ch.refsmall[ch.chnkAndCnt&255]&192)
-	default:
-		ptr := alloc.Ptr(binary.LittleEndian.Uint32(ch.refsmall[:]))
-		var mask *LargeChunkMask
-		al.Get(ptr, &mask)
-		if mask[3] != 0 {
-			return base + 64*3
-		}
-		if mask[2] != 0 {
-			return base + 64*2
-		}
-		if mask[1] != 0 {
-			return base + 64*1
-		}
-		return base + 64*0
-	}
-}
-
-type LargeChunkMask [4]uint64
-
-func (msk *LargeChunkMask) Has(i uint8) bool {
-	return msk[i/64]&(1<<(i&63)) != 0
-}
-
-func (msk *LargeChunkMask) Set(i uint8) bool {
-	p, b := i/64, uint64(1)<<(i&63)
-	r := msk[p]&b == 0
-	msk[p] |= b
-	return r
-}
-
-func (msk *LargeChunkMask) Unset(i uint8) bool {
-	p, b := i/64, uint64(1)<<(i&63)
-	r := msk[p]&b != 0
-	msk[p] &^= b
-	return r
+	return (ch.chnkAndCnt &^ 511) >> 1
 }
 
 type LargeIterator struct {
@@ -208,51 +170,31 @@ func (it *LargeIterator) LastSpan() int32 {
 	return it.L.chunks[it.L.cnt-1].LastSpan(it.Al)
 }
 
-func (it *LargeIterator) FetchAndNext(span int32) (uint64, int32) {
+func (it *LargeIterator) FetchAndNext(span int32) (Block, int32) {
+	var block Block
+	if it.Li == 0 {
+		return block, NoNext
+	}
 	chix := (span &^ 255) << 1
 	li := JumpSearch(it.Li, func(i int) bool {
-		return chix <= it.L.chunks[i].chnkAndCnt&^511
+		return chix <= it.L.chunks[i].chnkAndCnt
 	})
-	it.Li = li + 1
+	it.Li = li
 	ch := it.L.chunks[li]
-	var block uint64
 	if chix == ch.chnkAndCnt&^511 {
-		var here LargeChunkMask
-		var mask *LargeChunkMask
 		switch ch.chnkAndCnt & 256 {
 		case 0:
-			mask = &here
 			cnt := int(ch.chnkAndCnt&255) + 1
 			for i := 0; i < cnt; i++ {
-				mask.Set(ch.refsmall[i])
+				block.Set(ch.refsmall[i])
 			}
 		default:
+			var bl *Block
 			ptr := alloc.Ptr(binary.LittleEndian.Uint32(ch.refsmall[:]))
-			it.Al.Get(ptr, &mask)
-		}
-		k := (span / 64) & 3
-		block = mask[k]
-		base := (ch.chnkAndCnt &^ 511) >> 1
-		switch k {
-		case 3:
-			if mask[2] != 0 {
-				return block, base + 128
-			}
-			fallthrough
-		case 2:
-			if mask[1] != 0 {
-				return block, base + 64
-			}
-			fallthrough
-		case 1:
-			if mask[0] != 0 {
-				return block, base
-			}
-			fallthrough
-		case 0:
+			it.Al.Get(ptr, &bl)
+			block = *bl
 		}
 	}
-	it.Li = li
 	if li == 0 {
 		return block, NoNext
 	}

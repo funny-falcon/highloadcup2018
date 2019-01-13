@@ -10,8 +10,8 @@ import (
 )
 
 const NoNext = -1
-const SpanSize = 64
-const SpanMask = 63
+const SpanSize = 256
+const SpanMask = SpanSize - 1
 
 type Bitmap interface {
 	Set(al alloc.Allocator, addr alloc.Ptr, i int32) alloc.Ptr
@@ -22,28 +22,15 @@ type Bitmap interface {
 
 type Iterator interface {
 	LastSpan() int32
-	FetchAndNext(span int32) (uint64, int32)
-}
-
-func Decompress(span int32, block uint64, to *[]int32) {
-	*to = (*to)[:0]
-	if block == 0 {
-		return
-	}
-	for i := uint8(64); i > 0; i-- {
-		if block&(1<<(i-1)) != 0 {
-			*to = append(*to, span+int32(i-1))
-		}
-	}
+	FetchAndNext(span int32) (Block, int32)
 }
 
 func LoopIter(it Iterator, f func(u []int32) bool) {
-	indx := make([]int32, 0, 256)
+	var indx [256]int32
 	last := it.LastSpan()
 	for last >= 0 {
 		block, next := it.FetchAndNext(last)
-		Decompress(last, block, &indx)
-		if !f(indx) {
+		if !f(block.Unroll(last, &indx)) {
 			break
 		}
 		last = next

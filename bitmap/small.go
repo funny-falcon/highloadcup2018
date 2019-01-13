@@ -73,27 +73,27 @@ type SmallIter struct {
 
 func (si *SmallIter) LastSpan() int32 {
 	last := si.S.nums[si.S.cnt-1]
-	return last &^ 63
+	return last &^ SpanMask
 }
 
-func (si *SmallIter) FetchAndNext(span int32) (uint64, int32) {
+func (si *SmallIter) FetchAndNext(span int32) (Block, int32) {
 	li, ll := si.Li, si.Li
 	if li < int(si.S.cnt) && si.S.nums[li] < span {
 		li = int(si.S.cnt)
 	}
 	if li == 0 {
-		return 0, NoNext
+		return Block{}, NoNext
 	}
 	for ; li > 0 && si.S.nums[li-1] >= span; li-- {
 	}
 	si.Li = li
-	block := uint64(0)
-	for ; li < ll && si.S.nums[li] < span+64; li++ {
-		block |= 1 << uint8(si.S.nums[li]&63)
+	var block Block
+	for ; li < ll && si.S.nums[li] < span+SpanSize; li++ {
+		block.Set(uint8(si.S.nums[li] & SpanMask))
 	}
 	if li == 0 {
 		return block, NoNext
 	} else {
-		return block, si.S.nums[li-1] &^ 63
+		return block, si.S.nums[li-1] &^ SpanMask
 	}
 }

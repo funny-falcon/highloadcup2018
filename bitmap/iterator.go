@@ -10,8 +10,8 @@ func (NilIterator) LastSpan() int32 {
 	return NoNext
 }
 
-func (NilIterator) FetchAndNext(span int32) (uint64, int32) {
-	return 0, NoNext
+func (NilIterator) FetchAndNext(span int32) (Block, int32) {
+	return Block{}, NoNext
 }
 
 var EmptyIt = &NilIterator{}
@@ -66,15 +66,15 @@ func (it *OrIterator) LastSpan() int32 {
 	return it.Last
 }
 
-func (it *OrIterator) FetchAndNext(span int32) (uint64, int32) {
+func (it *OrIterator) FetchAndNext(span int32) (Block, int32) {
 	current := it.Its[0].Next
+	var block Block
 	if current < 0 {
-		return 0, NoNext
+		return block, NoNext
 	}
-	block := uint64(0)
 	for it.Its[0].Next == current {
 		cbl, cnext := it.Its[0].It.FetchAndNext(span)
-		block |= cbl
+		block.Union(cbl)
 		it.Its[0].Next = cnext
 		heap.Fix(&it.Its, 0)
 	}
@@ -127,15 +127,15 @@ func (it *AndIterator) LastSpan() int32 {
 	return it.Last
 }
 
-func (it *AndIterator) FetchAndNext(span int32) (uint64, int32) {
-	next := span - 64
+func (it *AndIterator) FetchAndNext(span int32) (Block, int32) {
+	next := span - SpanSize
 	if next < 0 {
 		next = NoNext
 	}
-	block := ^uint64(0)
+	block := AllBlock
 	for _, it := range it.Its {
 		cbl, cnext := it.FetchAndNext(span)
-		block &= cbl
+		block.Intersect(cbl)
 		if cnext < next {
 			next = cnext
 		}
@@ -163,17 +163,17 @@ func NewNotIterator(it Iterator, nextId int32) Iterator {
 }
 
 func (it *NotIterator) LastSpan() int32 {
-	return it.Last &^ 63
+	return it.Last &^ SpanMask
 }
 
-func (it *NotIterator) FetchAndNext(span int32) (uint64, int32) {
-	mask := ^uint64(0)
+func (it *NotIterator) FetchAndNext(span int32) (Block, int32) {
+	mask := AllBlock
 	if span == it.LastSpan() {
-		mask = (1 << uint32(it.Last&63)) - 1
+		mask = BlockMask(uint8(it.Last & SpanMask))
 	}
 	b, _ := it.It.FetchAndNext(span)
-	b &= mask
-	nxt := span - 64
+	b.Intersect(mask)
+	nxt := span - SpanSize
 	if nxt < 0 {
 		nxt = NoNext
 	}
@@ -197,10 +197,10 @@ func (it *AllIterator) LastSpan() int32 {
 	return it.Last &^ 63
 }
 
-func (it *AllIterator) FetchAndNext(span int32) (uint64, int32) {
-	mask := ^uint64(0)
+func (it *AllIterator) FetchAndNext(span int32) (Block, int32) {
+	mask := AllBlock
 	if span == it.LastSpan() {
-		mask = (1 << uint32(it.Last&63)) - 1
+		mask = BlockMask(uint8(it.Last & SpanMask))
 	}
 	nxt := span - 64
 	if nxt < 0 {

@@ -5,9 +5,10 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/funny-falcon/highloadcup2018/alloc"
 	"github.com/funny-falcon/highloadcup2018/bitmap"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestSmall(t *testing.T) {
@@ -19,7 +20,7 @@ func TestSmall(t *testing.T) {
 
 func testIt(t *testing.T, b bitmap.Bitmap, maxcap int, gen func() int32) {
 	var al alloc.Simple
-	for k := maxcap; k >= 1; k = k * 3 / 4 {
+	for k := 1; k <= maxcap; k += k/4 + 1 {
 		sm := bitmap.Wrap(&al, nil, b)
 		var set dumbSet
 		set.generate(k, gen)
@@ -31,7 +32,7 @@ func testIt(t *testing.T, b bitmap.Bitmap, maxcap int, gen func() int32) {
 		sort.Sort(set)
 		sort.Sort(nset)
 
-		assert.Equal(t, set, nset)
+		require.Equal(t, set, nset)
 
 		set.shuffle()
 		for i := k / 4; i >= 0; i-- {
@@ -43,7 +44,7 @@ func testIt(t *testing.T, b bitmap.Bitmap, maxcap int, gen func() int32) {
 		sort.Sort(set)
 		sort.Sort(nset)
 
-		assert.Equal(t, set, nset)
+		require.Equal(t, set, nset)
 	}
 }
 
@@ -95,16 +96,16 @@ func (ds dumbSet) LastSpan() int32 {
 	return ds[0] &^ bitmap.SpanMask
 }
 
-func (ds dumbSet) FetchAndNext(span int32) (uint64, int32) {
+func (ds dumbSet) FetchAndNext(span int32) (bitmap.Block, int32) {
+	var block bitmap.Block
 	if span < 0 {
-		return 0, bitmap.NoNext
+		return block, bitmap.NoNext
 	}
 	ix := sort.Search(len(ds), func(i int) bool {
 		return span > ds[i]
 	})
-	block := uint64(0)
 	for i := ix - 1; i >= 0 && ds[i] < span+bitmap.SpanSize; i-- {
-		block |= 1 << uint32(ds[i]-span)
+		block.Set(uint8(ds[i] - span))
 	}
 	if ix == len(ds) {
 		return block, bitmap.NoNext
