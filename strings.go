@@ -119,6 +119,9 @@ func (us *StringsTable) GetHndl(i uint32) *StringHandle {
 }
 
 func (us *StringsTable) GetStr(i uint32) string {
+	if i == 0 {
+		return ""
+	}
 	return us.Arr[i-1].Str()
 }
 
@@ -202,6 +205,7 @@ func (us *UniqStrings) ResetUser(ix uint32, uid int32) {
 type SomeStrings struct {
 	sync.Mutex
 	StringsTable
+	OtherStrings []string
 }
 
 func (ss *SomeStrings) Add(str string, uid int32) uint32 {
@@ -218,6 +222,11 @@ func (ss *SomeStrings) Add(str string, uid int32) uint32 {
 	}
 
 	ix, _ := ss.Insert(str)
+	/*
+		if int(ix) == len(ss.OtherStrings)+1 {
+			ss.OtherStrings = append(ss.OtherStrings, ss.StringsTable.GetStr(ix))
+		}
+	*/
 	hndl := ss.GetHndl(ix)
 	wr := bitmap.Wrap(&BitmapAlloc, hndl.HndlAsPtr(), bitmap.LargeEmpty)
 	wr.Set(uid)
@@ -237,3 +246,12 @@ func (ss *SomeStrings) GetIter(ix uint32, max int32) bitmap.Iterator {
 	}
 	return bitmap.Wrap(&BitmapAlloc, ss.GetHndl(ix).HndlAsPtr(), bitmap.LargeEmpty).Iterator(max)
 }
+
+/*
+func (ss *SomeStrings) GetStr(ix uint32) string {
+	if ix == 0 {
+		return ""
+	}
+	return ss.OtherStrings[ix-1]
+}
+*/

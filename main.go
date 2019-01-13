@@ -7,8 +7,9 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-var datazip = flag.String("data", "/tmp/data/data.zip", "data file")
-var options = flag.String("opts", "/tmp/data/options.txt", "options file")
+//var datazip = flag.String("data", "/tmp/data/data.zip", "data file")
+//var options = flag.String("opts", "/tmp/data/options.txt", "options file")
+var path = flag.String("path", "/tmp/data/", "data path")
 var port = flag.String("port", "80", "port to listen")
 var onlyload = flag.Bool("onlyload", false, "only load")
 

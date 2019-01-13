@@ -21,12 +21,12 @@ const (
 	StatusBitsFree    = 0x02
 	StatusBitsMeeting = 0x04
 	StatusBitsComplex = 0x06
-	StatusFreeIx      = 1
+	StatusComplexIx   = 1
 	StatusMeetingIx   = 2
-	StatusComplexIx   = 3
-	StatusFree        = "свободны"
-	StatusMeeting     = "заняты"
+	StatusFreeIx      = 3
 	StatusComplex     = "всё сложно"
+	StatusMeeting     = "заняты"
+	StatusFree        = "свободны"
 
 	StatusPremiumNow   = 0x08
 	StatusPremiumHas   = 0x10
@@ -237,7 +237,7 @@ func GetPremiumLength(start, finish int32) uint8 {
 		return 2
 	case 182 * 24 * 3600:
 		return 3
-	case 265 * 24 * 3600:
+	case 365 * 24 * 3600:
 		return 4
 	default:
 		panic(fmt.Sprintf("wrong premium length %d %d %d", lngth, start, finish))
@@ -333,7 +333,7 @@ var Likers []alloc.Ptr
 var LikersAlloc alloc.Simple
 
 func SureLikers(i int32) *bitmap.Wrapper {
-	if int(i) >= len(Accounts) {
+	if int(i) >= len(Likers) {
 		ln := int32(1)
 		for ; ln < i; ln *= 2 {
 		}
@@ -345,7 +345,7 @@ func SureLikers(i int32) *bitmap.Wrapper {
 }
 
 func GetLikers(i int32) *bitmap.Wrapper {
-	if int(i) >= len(Accounts) {
+	if int(i) >= len(Likers) {
 		return nil
 	}
 	if Likers[i] == 0 {

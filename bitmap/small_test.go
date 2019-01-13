@@ -55,7 +55,7 @@ func (ds *dumbSet) generate(k int, gen func() int32) {
 	for len(set) < k {
 		v := gen()
 		ix := sort.Search(len(set), func(i int) bool {
-			return v <= set[i]
+			return v >= set[i]
 		})
 		if ix < len(set) && set[ix] == v {
 			continue
@@ -95,6 +95,8 @@ func (ds dumbSet) LastSpan() int32 {
 	}
 	return ds[0] &^ bitmap.SpanMask
 }
+
+func (ds dumbSet) Reset() {}
 
 func (ds dumbSet) FetchAndNext(span int32) (bitmap.Block, int32) {
 	var block bitmap.Block

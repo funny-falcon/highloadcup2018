@@ -9,9 +9,9 @@ import (
 	"github.com/funny-falcon/highloadcup2018/alloc"
 )
 
-const NoNext = -1
 const SpanSize = 256
 const SpanMask = SpanSize - 1
+const NoNext = -SpanSize
 
 type Bitmap interface {
 	Set(al alloc.Allocator, addr alloc.Ptr, i int32) alloc.Ptr
@@ -23,14 +23,16 @@ type Bitmap interface {
 type Iterator interface {
 	LastSpan() int32
 	FetchAndNext(span int32) (Block, int32)
+	Reset()
 }
 
 func LoopIter(it Iterator, f func(u []int32) bool) {
 	var indx [256]int32
 	last := it.LastSpan()
+	it.Reset()
 	for last >= 0 {
 		block, next := it.FetchAndNext(last)
-		if !f(block.Unroll(last, &indx)) {
+		if !block.Empty() && !f(block.Unroll(last, &indx)) {
 			break
 		}
 		last = next
@@ -40,6 +42,7 @@ func LoopIter(it Iterator, f func(u []int32) bool) {
 func CountIter(it Iterator) uint32 {
 	last := it.LastSpan()
 	count := uint32(0)
+	it.Reset()
 	for last >= 0 {
 		block, next := it.FetchAndNext(last)
 		count += block.Count()

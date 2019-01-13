@@ -30,11 +30,11 @@ type AccountIn struct {
 	Premium   struct {
 		Start  int32 `json:"start"`
 		Finish int32 `json:"finish"`
-	}
+	} `json:"premium"`
 	Likes []struct {
 		Id int32 `json:"id"`
 		Ts int32 `json:"ts"`
-	}
+	} `json:"likes"`
 }
 
 type AccountsIn struct {
@@ -42,7 +42,7 @@ type AccountsIn struct {
 }
 
 func Load() {
-	optfile, err := os.Open(*options)
+	optfile, err := os.Open(*path + "options.txt")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func Load() {
 	}
 	optfile.Close()
 
-	rdr, err := zip.OpenReader(*datazip)
+	rdr, err := zip.OpenReader(*path + "data.zip")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -146,6 +146,7 @@ func Load() {
 					acc.SetInterest(ix)
 				}
 				var likes Likes
+				//log.Println(accin.Likes)
 				for i, like := range accin.Likes {
 					likes.Likes[i].UidAndCnt = like.Id << LikeUidShift
 					likes.Likes[i].AvgTs = like.Ts

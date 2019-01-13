@@ -14,6 +14,8 @@ func (NilIterator) FetchAndNext(span int32) (Block, int32) {
 	return Block{}, NoNext
 }
 
+func (NilIterator) Reset() {}
+
 var EmptyIt = &NilIterator{}
 
 type OrIterator struct {
@@ -66,13 +68,37 @@ func (it *OrIterator) LastSpan() int32 {
 	return it.Last
 }
 
+func (it *OrIterator) Reset() {
+	for i := range it.Its {
+		t := &it.Its[i]
+		t.It.Reset()
+		t.Next = t.It.LastSpan()
+	}
+}
+
 func (it *OrIterator) FetchAndNext(span int32) (Block, int32) {
-	current := it.Its[0].Next
 	var block Block
-	if current < 0 {
+	if span < 0 {
 		return block, NoNext
 	}
-	for it.Its[0].Next == current {
+	/*
+		next := int32(NoNext)
+		for i, elem := range it.Its {
+			if elem.Next < span {
+				if elem.Next > next {
+					next = elem.Next
+				}
+				continue
+			}
+			cbl, nxt := elem.It.FetchAndNext(span)
+			it.Its[i].Next = nxt
+			block.Union(cbl)
+			if nxt > next {
+				next = nxt
+			}
+		}
+	*/
+	for it.Its[0].Next >= span {
 		cbl, cnext := it.Its[0].It.FetchAndNext(span)
 		block.Union(cbl)
 		it.Its[0].Next = cnext
@@ -127,6 +153,12 @@ func (it *AndIterator) LastSpan() int32 {
 	return it.Last
 }
 
+func (it *AndIterator) Reset() {
+	for _, it := range it.Its {
+		it.Reset()
+	}
+}
+
 func (it *AndIterator) FetchAndNext(span int32) (Block, int32) {
 	next := span - SpanSize
 	if next < 0 {
@@ -143,6 +175,7 @@ func (it *AndIterator) FetchAndNext(span int32) (Block, int32) {
 	return block, next
 }
 
+/*
 type NotIterator struct {
 	It   Iterator
 	Last int32
@@ -179,6 +212,7 @@ func (it *NotIterator) FetchAndNext(span int32) (Block, int32) {
 	}
 	return b, nxt
 }
+*/
 
 type AllIterator struct {
 	Last int32
@@ -197,6 +231,8 @@ func (it *AllIterator) LastSpan() int32 {
 	return it.Last &^ 63
 }
 
+func (it *AllIterator) Reset() {}
+
 func (it *AllIterator) FetchAndNext(span int32) (Block, int32) {
 	mask := AllBlock
 	if span == it.LastSpan() {
@@ -207,4 +243,51 @@ func (it *AllIterator) FetchAndNext(span int32) (Block, int32) {
 		nxt = NoNext
 	}
 	return mask, nxt
+}
+
+type MaterializedIterator struct {
+	Elems []MIElem
+	L     int
+}
+
+type MIElem struct {
+	Span  int32
+	Block Block
+}
+
+func Materialize(it Iterator) Iterator {
+	mi := &MaterializedIterator{Elems: make([]MIElem, 0, 128)}
+	last := it.LastSpan()
+	it.Reset()
+	for last >= 0 {
+		block, next := it.FetchAndNext(last)
+		if !block.Empty() {
+			mi.Elems = append(mi.Elems, MIElem{last, block})
+		}
+		last = next
+	}
+	if len(mi.Elems) == 0 {
+		return EmptyIt
+	}
+	mi.L = 0
+	return mi
+}
+
+func (mi *MaterializedIterator) LastSpan() int32 {
+	return mi.Elems[0].Span
+}
+
+func (mi *MaterializedIterator) Reset() {
+	mi.L = 0
+}
+
+func (mi *MaterializedIterator) FetchAndNext(span int32) (Block, int32) {
+	ix := mi.L + JumpSearch(len(mi.Elems)-mi.L, func(i int) bool {
+		return span >= mi.Elems[mi.L+i].Span
+	})
+	mi.L = ix + 1
+	if mi.L >= len(mi.Elems) {
+		return mi.Elems[ix].Block, NoNext
+	}
+	return mi.Elems[ix].Block, mi.Elems[ix+1].Span
 }

@@ -24,6 +24,10 @@ func (b *Block) Has(i uint8) bool {
 	return b[i>>5]&(1<<(i&31)) != 0
 }
 
+func (b *Block) Empty() bool {
+	return b[0]|b[1]|b[2]|b[3]|b[4]|b[5]|b[6]|b[7] == 0
+}
+
 func (b *Block) Count() uint32 {
 	sum := 0
 	for _, v := range b {
@@ -68,7 +72,7 @@ func (b *Block) Union(o Block) {
 }
 
 func (b *Block) Unroll(span int32, r *[256]int32) []int32 {
-	k := uint8(0)
+	k := uint32(0)
 	span += 256
 	for j := 7; j >= 0; j-- {
 		v := b[j]
@@ -86,7 +90,7 @@ func (b *Block) Unroll(span int32, r *[256]int32) []int32 {
 	return r[:k]
 }
 
-func unroll2(v uint32, sp int32, k uint8, r *[256]int32) uint8 {
+func unroll2(v uint32, sp int32, k uint32, r *[256]int32) uint32 {
 	switch v {
 	case 3:
 		r[k] = sp

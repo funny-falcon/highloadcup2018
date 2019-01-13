@@ -19,9 +19,7 @@ func (s *Small) ApproxCapa() int32 {
 }
 
 func (s *Small) Set(allocator alloc.Allocator, old alloc.Ptr, ix int32) alloc.Ptr {
-	i := sort.Search(int(s.cnt), func(i int) bool {
-		return ix <= s.nums[i]
-	})
+	i := sort.Search(int(s.cnt), func(i int) bool { return ix >= s.nums[i] })
 	if i < int(s.cnt) && s.nums[i] == ix {
 		return old
 	}
@@ -49,9 +47,7 @@ func (s *Small) Set(allocator alloc.Allocator, old alloc.Ptr, ix int32) alloc.Pt
 }
 
 func (s *Small) Unset(allocator alloc.Allocator, old alloc.Ptr, ix int32) alloc.Ptr {
-	i := sort.Search(int(s.cnt), func(i int) bool {
-		return ix <= s.nums[i]
-	})
+	i := sort.Search(int(s.cnt), func(i int) bool { return ix >= s.nums[i] })
 	if i < int(s.cnt) && s.nums[i] == ix {
 		copy(s.nums[i:], s.nums[i+1:s.cnt])
 		s.cnt--
@@ -63,7 +59,7 @@ func (s *Small) Iterator(al alloc.Allocator, max int32) Iterator {
 	if s.cnt == 0 {
 		return EmptyIt
 	}
-	return &SmallIter{S: s, Li: int(s.cnt)}
+	return &SmallIter{S: s}
 }
 
 type SmallIter struct {
@@ -72,28 +68,29 @@ type SmallIter struct {
 }
 
 func (si *SmallIter) LastSpan() int32 {
-	last := si.S.nums[si.S.cnt-1]
-	return last &^ SpanMask
+	return si.S.nums[0] &^ SpanMask
+}
+
+func (si *SmallIter) Reset() {
+	si.Li = 0
 }
 
 func (si *SmallIter) FetchAndNext(span int32) (Block, int32) {
-	li, ll := si.Li, si.Li
-	if li < int(si.S.cnt) && si.S.nums[li] < span {
-		li = int(si.S.cnt)
+	li := si.Li
+	for ; li < int(si.S.cnt) && si.S.nums[li] >= span+SpanSize; li++ {
 	}
-	if li == 0 {
-		return Block{}, NoNext
-	}
-	for ; li > 0 && si.S.nums[li-1] >= span; li-- {
-	}
-	si.Li = li
 	var block Block
-	for ; li < ll && si.S.nums[li] < span+SpanSize; li++ {
+	if li >= int(si.S.cnt) {
+		si.Li = li
+		return block, NoNext
+	}
+	for ; li < int(si.S.cnt) && si.S.nums[li] >= span; li++ {
 		block.Set(uint8(si.S.nums[li] & SpanMask))
 	}
-	if li == 0 {
+	si.Li = li
+	if li >= int(si.S.cnt) {
 		return block, NoNext
 	} else {
-		return block, si.S.nums[li-1] &^ SpanMask
+		return block, si.S.nums[li] &^ SpanMask
 	}
 }

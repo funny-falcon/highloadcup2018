@@ -27,7 +27,7 @@ func (l *Large) ApproxCapa() int32 {
 func (l *Large) Set(allocator alloc.Allocator, ptr alloc.Ptr, ix int32) alloc.Ptr {
 	chix := (ix &^ 255) << 1
 	chi := sort.Search(int(l.cnt), func(i int) bool {
-		return chix <= l.chunks[i].chnkAndCnt
+		return chix >= l.chunks[i].chnkAndCnt&^511
 	})
 	if chi >= int(l.cnt) || l.chunks[chi].chnkAndCnt&^511 != chix {
 		if l.cnt == l.cap {
@@ -59,7 +59,7 @@ func (l *Large) Set(allocator alloc.Allocator, ptr alloc.Ptr, ix int32) alloc.Pt
 func (l *Large) Unset(allocator alloc.Allocator, ptr alloc.Ptr, ix int32) alloc.Ptr {
 	chix := (ix &^ 255) << 1
 	chi := sort.Search(int(l.cnt), func(i int) bool {
-		return chix <= l.chunks[i].chnkAndCnt
+		return chix >= l.chunks[i].chnkAndCnt&^511
 	})
 	if chi < int(l.cnt) && l.chunks[chi].chnkAndCnt&^511 == chix {
 		if l.chunks[chi].Unset(allocator, uint8(ix)) {
@@ -77,7 +77,6 @@ func (ch *Large) Iterator(allocator alloc.Allocator, max int32) Iterator {
 	return &LargeIterator{
 		L:  ch,
 		Al: allocator,
-		Li: int(ch.cnt),
 	}
 }
 
@@ -118,6 +117,9 @@ func (ch *LargeChunk) Set(allocator alloc.Allocator, ix uint8) {
 		allocator.Get(alloc.Ptr(ptr), &mask)
 		if mask.Set(ix) {
 			ch.chnkAndCnt++
+			if ch.chnkAndCnt&255 == 0 {
+				panic("overflow")
+			}
 		}
 	}
 }
@@ -153,7 +155,7 @@ func (ch *LargeChunk) Unset(allocator alloc.Allocator, ix uint8) bool {
 	return false
 }
 
-func (ch *LargeChunk) LastSpan(al alloc.Allocator) int32 {
+func (ch *LargeChunk) Span() int32 {
 	return (ch.chnkAndCnt &^ 511) >> 1
 }
 
@@ -164,60 +166,70 @@ type LargeIterator struct {
 }
 
 func (it *LargeIterator) LastSpan() int32 {
-	if it.L.cnt == 0 {
-		return NoNext
-	}
-	return it.L.chunks[it.L.cnt-1].LastSpan(it.Al)
+	return it.L.chunks[0].Span()
+}
+
+func (it *LargeIterator) Reset() {
+	it.Li = 0
 }
 
 func (it *LargeIterator) FetchAndNext(span int32) (Block, int32) {
 	var block Block
-	if it.Li == 0 {
-		return block, NoNext
+	chixn := ((span &^ 255) + SpanSize) << 1
+	/*
+		li := it.Li + JumpSearch(int(it.L.cnt)-it.Li, func(i int) bool {
+			return chixn > it.L.chunks[it.Li+i].chnkAndCnt
+		})
+	*/
+	li := it.Li
+	for ; li < int(it.L.cnt) && chixn <= it.L.chunks[li].chnkAndCnt; li++ {
 	}
-	chix := (span &^ 255) << 1
-	li := JumpSearch(it.Li, func(i int) bool {
-		return chix <= it.L.chunks[i].chnkAndCnt
-	})
 	it.Li = li
-	ch := it.L.chunks[li]
-	if chix == ch.chnkAndCnt&^511 {
-		switch ch.chnkAndCnt & 256 {
-		case 0:
-			cnt := int(ch.chnkAndCnt&255) + 1
-			for i := 0; i < cnt; i++ {
-				block.Set(ch.refsmall[i])
+	if li < int(it.L.cnt) {
+		ch := it.L.chunks[li]
+		if span == ch.Span() {
+			it.Li = li + 1
+			switch ch.chnkAndCnt & 256 {
+			case 0:
+				cnt := int(ch.chnkAndCnt&255) + 1
+				for i := 0; i < cnt; i++ {
+					block.Set(ch.refsmall[i])
+				}
+			default:
+				var bl *Block
+				ptr := alloc.Ptr(binary.LittleEndian.Uint32(ch.refsmall[:]))
+				it.Al.Get(ptr, &bl)
+				block = *bl
 			}
-		default:
-			var bl *Block
-			ptr := alloc.Ptr(binary.LittleEndian.Uint32(ch.refsmall[:]))
-			it.Al.Get(ptr, &bl)
-			block = *bl
 		}
 	}
-	if li == 0 {
+	if it.Li >= int(it.L.cnt) {
 		return block, NoNext
 	}
-	return block, it.L.chunks[li-1].LastSpan(it.Al)
+	return block, it.L.chunks[it.Li].Span()
 }
 
 func JumpSearch(n int, f func(i int) bool) int {
-	if n == 0 {
+	if n == 0 || f(0) {
 		return 0
 	}
+	if n == 1 || f(1) {
+		return 1
+	}
+	if n == 2 || f(2) {
+		return 2
+	}
+	if n == 3 || f(3) {
+		return 3
+	}
 	var j int
-	for j = 1; j <= n; j *= 2 {
-		c := n - j
+	for j = 8; j <= n; j *= 2 {
+		c := j - 1
 		if f(c) {
-			switch j {
-			case 1:
-				return n - 1
-			case 2:
-				return n - 2
-			default:
-				return c + sort.Search(j/2, func(k int) bool { return f(c + k) })
-			}
+			h := j / 2
+			return h + sort.Search(h, func(k int) bool { return f(h + k) })
 		}
 	}
-	return sort.Search(n-j/2, f)
+	h := j / 2
+	return h + sort.Search(n-h, func(k int) bool { return f(h + k) })
 }
