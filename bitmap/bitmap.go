@@ -10,6 +10,8 @@ import (
 )
 
 const NoNext = -1
+const SpanSize = 64
+const SpanMask = 63
 
 type Bitmap interface {
 	Set(al alloc.Allocator, addr alloc.Ptr, i int32) alloc.Ptr

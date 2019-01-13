@@ -73,7 +73,7 @@ func (it *OrIterator) FetchAndNext(span int32) (uint64, int32) {
 	}
 	block := uint64(0)
 	for it.Its[0].Next == current {
-		cbl, cnext := it.FetchAndNext(span)
+		cbl, cnext := it.Its[0].It.FetchAndNext(span)
 		block |= cbl
 		it.Its[0].Next = cnext
 		heap.Fix(&it.Its, 0)
@@ -91,7 +91,7 @@ func NewAndIterator(its []Iterator) Iterator {
 	j := 0
 	for _, it := range its {
 		if _, ok := it.(*NilIterator); ok {
-			continue
+			return EmptyIt
 		}
 		its[j] = it
 		j++
@@ -178,4 +178,33 @@ func (it *NotIterator) FetchAndNext(span int32) (uint64, int32) {
 		nxt = NoNext
 	}
 	return b, nxt
+}
+
+type AllIterator struct {
+	Last int32
+}
+
+func NewAllIterator(nextId int32) Iterator {
+	if nextId == 0 {
+		return EmptyIt
+	}
+	return &AllIterator{
+		Last: nextId - 1,
+	}
+}
+
+func (it *AllIterator) LastSpan() int32 {
+	return it.Last &^ 63
+}
+
+func (it *AllIterator) FetchAndNext(span int32) (uint64, int32) {
+	mask := ^uint64(0)
+	if span == it.LastSpan() {
+		mask = (1 << uint32(it.Last&63)) - 1
+	}
+	nxt := span - 64
+	if nxt < 0 {
+		nxt = NoNext
+	}
+	return mask, nxt
 }

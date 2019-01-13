@@ -19,47 +19,133 @@ func TestSmall(t *testing.T) {
 
 func testIt(t *testing.T, b bitmap.Bitmap, maxcap int, gen func() int32) {
 	var al alloc.Simple
-	for k := 1; k < maxcap; k += k/2 + 1 {
+	for k := maxcap; k >= 1; k = k * 3 / 4 {
 		sm := bitmap.Wrap(&al, nil, b)
-		set := make([]int32, 0, k)
-		for len(set) < k {
-			v := gen()
-			ix := sort.Search(len(set), func(i int) bool {
-				return v <= set[i]
-			})
-			if ix < len(set) && set[ix] == v {
-				continue
-			}
-			set = append(set, 0)
-			copy(set[ix+1:], set[ix:])
-			set[ix] = v
+		var set dumbSet
+		set.generate(k, gen)
+		for _, v := range set {
 			sm.Set(v)
 		}
 
-		nset := make([]int32, 0, k)
-		bitmap.LoopIter(sm.Iterator(1<<20), func(u []int32) bool {
-			nset = append(nset, u...)
-			return true
-		})
-		sort.Slice(set, func(i, j int) bool { return set[i] < set[j] })
-		sort.Slice(nset, func(i, j int) bool { return nset[i] < nset[j] })
+		nset := dumbFromIter(sm.Iterator(1 << 20))
+		sort.Sort(set)
+		sort.Sort(nset)
 
 		assert.Equal(t, set, nset)
 
-		rand.Shuffle(k, func(i, j int) { set[i], set[j] = set[j], set[i] })
+		set.shuffle()
 		for i := k / 4; i >= 0; i-- {
 			sm.Unset(set[i])
 		}
 		set = set[k/4+1:]
 
-		nset = make([]int32, 0, k)
-		bitmap.LoopIter(sm.Iterator(1<<20), func(u []int32) bool {
-			nset = append(nset, u...)
-			return true
-		})
-		sort.Slice(set, func(i, j int) bool { return set[i] < set[j] })
-		sort.Slice(nset, func(i, j int) bool { return nset[i] < nset[j] })
+		nset = dumbFromIter(sm.Iterator(1 << 20))
+		sort.Sort(set)
+		sort.Sort(nset)
 
 		assert.Equal(t, set, nset)
 	}
+}
+
+type dumbSet []int32
+
+func (ds *dumbSet) generate(k int, gen func() int32) {
+	set := make([]int32, 0, k)
+	for len(set) < k {
+		v := gen()
+		ix := sort.Search(len(set), func(i int) bool {
+			return v <= set[i]
+		})
+		if ix < len(set) && set[ix] == v {
+			continue
+		}
+		set = append(set, 0)
+		copy(set[ix+1:], set[ix:])
+		set[ix] = v
+	}
+	*ds = set
+}
+
+func dumbFromIter(it bitmap.Iterator) dumbSet {
+	set := dumbSet{}
+	bitmap.LoopIter(it, func(u []int32) bool {
+		set = append(set, u...)
+		return true
+	})
+	return set
+}
+
+func (ds dumbSet) shuffle() {
+	rand.Shuffle(len(ds), ds.Swap)
+}
+
+func (ds dumbSet) Len() int           { return len(ds) }
+func (ds dumbSet) Less(i, j int) bool { return ds[i] > ds[j] }
+func (ds dumbSet) Swap(i, j int)      { ds[i], ds[j] = ds[j], ds[i] }
+
+func (ds dumbSet) Iterator() bitmap.Iterator {
+	sort.Sort(ds)
+	return ds
+}
+
+func (ds dumbSet) LastSpan() int32 {
+	if len(ds) == 0 {
+		return bitmap.NoNext
+	}
+	return ds[0] &^ bitmap.SpanMask
+}
+
+func (ds dumbSet) FetchAndNext(span int32) (uint64, int32) {
+	if span < 0 {
+		return 0, bitmap.NoNext
+	}
+	ix := sort.Search(len(ds), func(i int) bool {
+		return span > ds[i]
+	})
+	block := uint64(0)
+	for i := ix - 1; i >= 0 && ds[i] < span+bitmap.SpanSize; i-- {
+		block |= 1 << uint32(ds[i]-span)
+	}
+	if ix == len(ds) {
+		return block, bitmap.NoNext
+	}
+	return block, ds[ix] &^ bitmap.SpanMask
+}
+
+func (ds dumbSet) Intersect(other dumbSet) dumbSet {
+	res := dumbSet{}
+	i, j := 0, 0
+	for i < len(ds) && j < len(other) {
+		if ds[i] == other[j] {
+			res = append(res, ds[i])
+			i++
+			j++
+		} else if ds[i] > other[j] {
+			i++
+		} else {
+			j++
+		}
+	}
+	return res
+}
+
+func (ds dumbSet) Union(other dumbSet) dumbSet {
+	res := dumbSet{}
+	i, j := 0, 0
+	for i < len(ds) && j < len(other) {
+		if ds[i] == other[j] {
+			res = append(res, ds[i])
+			i++
+			j++
+		} else if ds[i] > other[j] {
+			res = append(res, ds[i])
+			i++
+		} else {
+			res = append(res, other[j])
+			j++
+		}
+	}
+	res = append(res, ds[i:]...)
+	res = append(res, other[j:]...)
+	return res
 }

@@ -76,8 +76,8 @@ func Load() {
 				}
 				var ok bool
 				acc := SureAccount(int32(accin.Id))
-				if MaxId < acc.Uid {
-					MaxId = acc.Uid
+				if MaxId <= acc.Uid {
+					MaxId = acc.Uid + 1
 				}
 				acc.Birth = accin.Birth
 				byear := GetBirthYear(acc.Birth)
@@ -98,10 +98,16 @@ func Load() {
 				switch acc.Status {
 				case StatusFreeIx:
 					FreeMap.Set(acc.Uid)
+					FreeOrComplexMap.Set(acc.Uid)
+					FreeOrMeetingMap.Set(acc.Uid)
 				case StatusMeetingIx:
 					MeetingMap.Set(acc.Uid)
+					FreeOrMeetingMap.Set(acc.Uid)
+					MeetingOrComplexMap.Set(acc.Uid)
 				case StatusComplexIx:
 					ComplexMap.Set(acc.Uid)
+					FreeOrComplexMap.Set(acc.Uid)
+					MeetingOrComplexMap.Set(acc.Uid)
 				}
 				acc.Email, ok = EmailIndex.InsertUid(accin.Email, acc.Uid)
 				if !ok {
@@ -111,8 +117,8 @@ func Load() {
 				domain := DomainFromEmail(accin.Email)
 				acc.Domain = uint8(DomainsStrings.Add(domain, acc.Uid))
 				IndexGtLtEmail(accin.Email, acc.Uid, true)
+				acc.Phone, ok = EmailIndex.InsertUid(accin.Phone, acc.Uid)
 				if accin.Phone != "" {
-					acc.Phone, ok = EmailIndex.InsertUid(accin.Phone, acc.Uid)
 					if !ok {
 						panic("phone is not unique " + accin.Phone)
 					}
@@ -121,6 +127,7 @@ func Load() {
 				}
 				acc.Fname = uint8(FnameStrings.Add(accin.Fname, acc.Uid))
 				acc.Sname = uint16(SnameStrings.Add(accin.Sname, acc.Uid))
+				SnameOnce.Reset()
 				acc.City = uint16(CityStrings.Add(accin.City, acc.Uid))
 				acc.Country = uint8(CountryStrings.Add(accin.Country, acc.Uid))
 				acc.PremiumStart = accin.Premium.Start

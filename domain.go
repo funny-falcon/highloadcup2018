@@ -111,20 +111,17 @@ var PhoneIndex UniqStrings
 var BitmapAlloc alloc.Simple
 var MaleMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
 var FemaleMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
+
 var FreeMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
 var MeetingMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
 var ComplexMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
+var FreeOrMeetingMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
+var MeetingOrComplexMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
+var FreeOrComplexMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
+
 var PremiumNow = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
 var PremiumNull = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
 var PremiumNotNull = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
-
-var InterestsIndexes = func() []*bitmap.Wrapper {
-	res := make([]*bitmap.Wrapper, 128)
-	for i := range res {
-		res[i] = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
-	}
-	return res
-}()
 
 var EmailGtIndexes = func() []*bitmap.Wrapper {
 	res := make([]*bitmap.Wrapper, 26)
@@ -178,8 +175,8 @@ var BirthYearIndexes = func() []*bitmap.Wrapper {
 	return res
 }()
 
-func GetBirthYear(ts int32) uint8 {
-	return uint8(time.Unix(int64(ts), 0).Year() - 1950)
+func GetBirthYear(ts int32) int32 {
+	return int32(time.Unix(int64(ts), 0).Year() - 1950)
 }
 
 var JoinYearIndexes = func() []*bitmap.Wrapper {
@@ -190,19 +187,19 @@ var JoinYearIndexes = func() []*bitmap.Wrapper {
 	return res
 }()
 
-func GetJoinYear(ts int32) uint8 {
-	return uint8(time.Unix(int64(ts), 0).Year() - 2011)
+func GetJoinYear(ts int32) int32 {
+	return int32(time.Unix(int64(ts), 0).Year() - 2011)
 }
 
-var DomainsStrings = NewSomeStrings()
-var PhoneCodesStrings = NewSomeStrings()
-var FnameStrings = NewSomeStrings()
-var SnameStrings = NewSomeStrings()
-var SnameSorted []uint32
-var SnameOnce Once
-var CityStrings = NewSomeStrings()
-var CountryStrings = NewSomeStrings()
-var InterestStrings = NewSomeStrings()
+var DomainsStrings SomeStrings
+var PhoneCodesStrings SomeStrings
+var FnameStrings SomeStrings
+var SnameStrings SomeStrings
+var SnameSorted SnameSorting
+var SnameOnce = NewOnce(SnameSorted.Init)
+var CityStrings SomeStrings
+var CountryStrings SomeStrings
+var InterestStrings SomeStrings
 
 func GetStatusIx(status string) (uint8, bool) {
 	switch status {
@@ -214,6 +211,19 @@ func GetStatusIx(status string) (uint8, bool) {
 		return StatusComplexIx, true
 	default:
 		return 0, false
+	}
+}
+
+func GetStatus(status uint8) string {
+	switch status {
+	case StatusFreeIx:
+		return StatusFree
+	case StatusMeetingIx:
+		return StatusMeeting
+	case StatusComplexIx:
+		return StatusComplex
+	default:
+		panic(fmt.Sprintf("Unknown statusIx %d", status))
 	}
 }
 
@@ -235,10 +245,13 @@ func GetPremiumLength(start, finish int32) uint8 {
 }
 
 func GetEmailStart(s string) uint32 {
-	return binary.BigEndian.Uint32([]byte(s))
+	if len(s) >= 4 {
+		return binary.BigEndian.Uint32([]byte(s))
+	}
+	return GetEmailPrefix(s)
 }
 
-func GetEmailGte(s string) uint32 {
+func GetEmailPrefix(s string) uint32 {
 	l := len(s)
 	r := uint32(0)
 	if l >= 4 {
@@ -256,6 +269,7 @@ func GetEmailGte(s string) uint32 {
 	return r
 }
 
+/*
 func GetEmailLte(s string) uint32 {
 	l := len(s)
 	r := uint32(0)
@@ -280,6 +294,38 @@ func GetEmailLte(s string) uint32 {
 		r |= 0xff000000
 	}
 	return r
+}
+*/
+
+type SnameSorting struct {
+	Ix  []uint32
+	Str []string
+}
+
+func (s *SnameSorting) Init() {
+	s.Ix = make([]uint32, len(SnameStrings.Arr))
+	s.Str = make([]string, len(SnameStrings.Arr))
+	for i := range s.Ix {
+		s.Ix[i] = uint32(i + 1)
+		s.Str[i] = SnameStrings.GetStr(uint32(i + 1))
+	}
+	sort.Sort(s)
+}
+
+func (s *SnameSorting) Len() int           { return len(s.Ix) }
+func (s *SnameSorting) Less(i, j int) bool { return s.Str[i] < s.Str[j] }
+func (s *SnameSorting) Swap(i, j int) {
+	s.Ix[i], s.Ix[j] = s.Ix[j], s.Ix[i]
+	s.Str[i], s.Str[j] = s.Str[j], s.Str[i]
+}
+
+func (s *SnameSorting) PrefixRange(pref string) (i, j int) {
+	i = sort.Search(len(s.Str), func(i int) bool {
+		return pref <= s.Str[i]
+	})
+	for j = i; j < len(s.Str) && strings.HasPrefix(s.Str[j], pref); j++ {
+	}
+	return
 }
 
 var Likers []alloc.Ptr

@@ -16,8 +16,10 @@ const StringShards = 64
 const ShardFind = (1 << 32) / StringShards
 
 type StringsTable struct {
-	Tbl []uint32
-	Arr []StringHandle
+	Tbl     []uint32
+	Arr     []StringHandle
+	Null    *bitmap.Wrapper
+	NotNull *bitmap.Wrapper
 }
 
 type StringHandle struct {
@@ -138,17 +140,40 @@ func (ush *StringsTable) Rebalance() {
 	ush.Tbl = newTbl
 }
 
+func (ush *StringsTable) SetNull(uid int32, isNull bool) {
+	if ush.Null == nil {
+		ush.Null = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
+		ush.NotNull = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
+	}
+	if isNull {
+		ush.Null.Set(uid)
+		ush.NotNull.Unset(uid)
+	} else {
+		ush.Null.Unset(uid)
+		ush.NotNull.Set(uid)
+	}
+}
+
 type UniqStrings struct {
 	sync.Mutex
 	StringsTable
+	Null    *bitmap.Wrapper
+	NotNull *bitmap.Wrapper
 }
 
 func (us *UniqStrings) InsertUid(s string, uid int32) (uint32, bool) {
 	if len(s) > 255 {
 		panic("String is too long " + s)
 	}
+
 	us.Lock()
 	defer us.Unlock()
+
+	us.SetNull(uid, s == "")
+	if s == "" {
+		return 0, true
+	}
+
 	ix, isNew := us.Insert(s)
 	hndl := us.GetHndl(ix)
 	if isNew {
@@ -177,25 +202,21 @@ func (us *UniqStrings) ResetUser(ix uint32, uid int32) {
 type SomeStrings struct {
 	sync.Mutex
 	StringsTable
-	Null    *bitmap.Wrapper
-	NotNull *bitmap.Wrapper
-}
-
-func NewSomeStrings() *SomeStrings {
-	return &SomeStrings{
-		Null:    bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty),
-		NotNull: bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty),
-	}
 }
 
 func (ss *SomeStrings) Add(str string, uid int32) uint32 {
-	if str == "" {
-		ss.Null.Set(uid)
-		return 0
+	if len(str) > 255 {
+		panic("String is too long " + str)
 	}
-	ss.NotNull.Set(uid)
+
 	ss.Lock()
 	defer ss.Unlock()
+
+	ss.SetNull(uid, str == "")
+	if str == "" {
+		return 0
+	}
+
 	ix, _ := ss.Insert(str)
 	hndl := ss.GetHndl(ix)
 	wr := bitmap.Wrap(&BitmapAlloc, hndl.HndlAsPtr(), bitmap.LargeEmpty)
@@ -208,4 +229,11 @@ func (ss *SomeStrings) GetIndex(ix uint32) *bitmap.Wrapper {
 		return ss.Null
 	}
 	return bitmap.Wrap(&BitmapAlloc, ss.GetHndl(ix).HndlAsPtr(), bitmap.LargeEmpty)
+}
+
+func (ss *SomeStrings) GetIter(ix uint32, max int32) bitmap.Iterator {
+	if ix == 0 {
+		return bitmap.EmptyIt
+	}
+	return bitmap.Wrap(&BitmapAlloc, ss.GetHndl(ix).HndlAsPtr(), bitmap.LargeEmpty).Iterator(max)
 }
