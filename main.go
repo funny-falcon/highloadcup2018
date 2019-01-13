@@ -3,6 +3,8 @@ package main
 import (
 	"flag"
 	"log"
+	"net/http"
+	_ "net/http/pprof"
 
 	"github.com/valyala/fasthttp"
 )
@@ -16,6 +18,9 @@ var onlyload = flag.Bool("onlyload", false, "only load")
 func main() {
 	log.SetFlags(log.Lmicroseconds | log.Lshortfile)
 	flag.Parse()
+
+	go http.ListenAndServe("localhost:6065", nil)
+
 	Load()
 
 	if *onlyload {

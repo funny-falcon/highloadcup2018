@@ -36,8 +36,7 @@ func (l *Large) Set(allocator alloc.Allocator, ptr alloc.Ptr, ix int32) alloc.Pt
 				nextcap = 2
 			}
 			nptr := allocator.Alloc(4 + 8*int(nextcap))
-			var nl *Large
-			allocator.Get(nptr, &nl)
+			nl := (*Large)(allocator.GetPtr(nptr))
 			nl.cap = nextcap
 			nl.cnt = l.cnt + 1
 			copy(nl.chunks[:chi], l.chunks[:chi])
@@ -96,8 +95,7 @@ func (ch *LargeChunk) Set(allocator alloc.Allocator, ix uint8) {
 		if cnt == 4 {
 			ch.chnkAndCnt |= 256
 			ptr := allocator.Alloc(32)
-			var mask *Block
-			allocator.Get(ptr, &mask)
+			mask := (*Block)(allocator.GetPtr(ptr))
 			mask.Set(ch.refsmall[0])
 			mask.Set(ch.refsmall[1])
 			mask.Set(ch.refsmall[2])
@@ -113,8 +111,7 @@ func (ch *LargeChunk) Set(allocator alloc.Allocator, ix uint8) {
 		ch.chnkAndCnt++
 	default:
 		ptr := binary.LittleEndian.Uint32(ch.refsmall[:])
-		var mask *Block
-		allocator.Get(alloc.Ptr(ptr), &mask)
+		mask := (*Block)(allocator.GetPtr(alloc.Ptr(ptr)))
 		if mask.Set(ix) {
 			ch.chnkAndCnt++
 			if ch.chnkAndCnt&255 == 0 {
@@ -175,6 +172,7 @@ func (it *LargeIterator) Reset() {
 
 func (it *LargeIterator) FetchAndNext(span int32) (Block, int32) {
 	var block Block
+	var bl = &block
 	chixn := ((span &^ 255) + SpanSize) << 1
 	/*
 		li := it.Li + JumpSearch(int(it.L.cnt)-it.Li, func(i int) bool {
@@ -182,11 +180,16 @@ func (it *LargeIterator) FetchAndNext(span int32) (Block, int32) {
 		})
 	*/
 	li := it.Li
-	for ; li < int(it.L.cnt) && chixn <= it.L.chunks[li].chnkAndCnt; li++ {
+	L := it.L
+	cnt := int(L.cnt)
+	if cnt >= len(L.chunks) {
+		return block, NoNext
+	}
+	for ; li < cnt && chixn <= L.chunks[li].chnkAndCnt; li++ {
 	}
 	it.Li = li
-	if li < int(it.L.cnt) {
-		ch := it.L.chunks[li]
+	if li < cnt {
+		ch := L.chunks[li]
 		if span == ch.Span() {
 			it.Li = li + 1
 			switch ch.chnkAndCnt & 256 {
@@ -196,17 +199,20 @@ func (it *LargeIterator) FetchAndNext(span int32) (Block, int32) {
 					block.Set(ch.refsmall[i])
 				}
 			default:
-				var bl *Block
 				ptr := alloc.Ptr(binary.LittleEndian.Uint32(ch.refsmall[:]))
-				it.Al.Get(ptr, &bl)
-				block = *bl
+				/*
+					var bl *Block
+					it.Al.Get(ptr, &bl)
+					block = *bl
+				*/
+				bl = (*Block)(it.Al.GetPtr(ptr))
 			}
 		}
 	}
-	if it.Li >= int(it.L.cnt) {
-		return block, NoNext
+	if it.Li >= cnt {
+		return *bl, NoNext
 	}
-	return block, it.L.chunks[it.Li].Span()
+	return *bl, L.chunks[it.Li].Span()
 }
 
 func JumpSearch(n int, f func(i int) bool) int {

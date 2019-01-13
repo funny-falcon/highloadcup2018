@@ -55,15 +55,32 @@ type Wrapper struct {
 	sync.Mutex
 	Alloc  alloc.Allocator
 	Ptr    *alloc.Ptr
-	Tpe    reflect2.Type
+	Tpe    unsafe.Pointer
 	Bitmap Bitmap
 }
 
+type eface struct {
+	rtype unsafe.Pointer
+	data  unsafe.Pointer
+}
+
+func rtype(pat interface{}) unsafe.Pointer {
+	return (*eface)(unsafe.Pointer(&pat)).rtype
+}
+
+func packEface(tpe unsafe.Pointer, p unsafe.Pointer) interface{} {
+	e := eface{tpe, p}
+	return *(*interface{})(unsafe.Pointer(&e))
+}
+
+var wtypes = []unsafe.Pointer{}
+var eltypes = []reflect2.Type{}
+
 func Wrap(al alloc.Allocator, ptr *alloc.Ptr, pat interface{}) *Wrapper {
-	tpe := reflect2.TypeOfPtr(pat).Elem()
+	tptr := rtype(pat)
 	wr := &Wrapper{
 		Alloc: al,
-		Tpe:   tpe,
+		Tpe:   tptr,
 		Ptr:   ptr,
 	}
 	if wr.Ptr == nil {
@@ -74,7 +91,7 @@ func Wrap(al alloc.Allocator, ptr *alloc.Ptr, pat interface{}) *Wrapper {
 	} else {
 		var p unsafe.Pointer
 		al.Get(*wr.Ptr, &p)
-		wr.Bitmap = tpe.PackEFace(p).(Bitmap)
+		wr.Bitmap = packEface(tptr, p).(Bitmap)
 	}
 	return wr
 }
@@ -107,7 +124,7 @@ func (w *Wrapper) remap(ptr alloc.Ptr) {
 		var p unsafe.Pointer
 		*w.Ptr = ptr
 		w.Alloc.Get(*w.Ptr, &p)
-		w.Bitmap = w.Tpe.PackEFace(p).(Bitmap)
+		w.Bitmap = packEface(w.Tpe, p).(Bitmap)
 	}
 }
 

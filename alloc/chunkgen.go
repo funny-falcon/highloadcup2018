@@ -9,6 +9,7 @@ import (
 )
 
 const SlabSize = 1 << 24
+const ChunkSizeShift = 18
 const ChunkSize = 1 << 18
 
 type ChunkGen struct {
@@ -37,10 +38,16 @@ type Base struct {
 }
 
 func (b *Base) Get(ref Ptr, ptr interface{}) {
-	chunkn, off := ref/ChunkSize, ref%ChunkSize
+	chunkn, off := ref>>ChunkSizeShift, ref&(ChunkSize-1)
 	//log.Printf("chunks %d ref %d chunkn %d off %d", len(b.Chunks), ref, chunkn, off)
 	addr := unsafe.Pointer(&b.Chunks[chunkn][off])
 	*(*unsafe.Pointer)(reflect2.PtrOf(ptr)) = addr
+}
+
+func (b *Base) GetPtr(ref Ptr) unsafe.Pointer {
+	chunkn, off := ref>>ChunkSizeShift, ref&(ChunkSize-1)
+	//log.Printf("chunks %d ref %d chunkn %d off %d", len(b.Chunks), ref, chunkn, off)
+	return unsafe.Pointer(&b.Chunks[chunkn][off])
 }
 
 func (b *Base) ExtendChunks() uint32 {

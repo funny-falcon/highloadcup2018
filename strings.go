@@ -34,8 +34,7 @@ type String struct {
 }
 
 func (h *StringHandle) Str() string {
-	var ustr *String
-	StringAlloc.Get(h.Ptr, &ustr)
+	ustr := (*String)(StringAlloc.GetPtr(h.Ptr))
 	return ustr.String()
 }
 
@@ -84,8 +83,7 @@ func (us *StringsTable) Insert(s string) (uint32, bool) {
 	}
 
 	ptr := StringAlloc.Alloc(len(s) + 1)
-	var ustr *String
-	StringAlloc.Get(ptr, &ustr)
+	ustr := (*String)(StringAlloc.GetPtr(ptr))
 	ustr.Len = uint8(len(s))
 	copy(ustr.Data[:], s)
 

@@ -29,8 +29,7 @@ func (s *Small) Set(allocator alloc.Allocator, old alloc.Ptr, ix int32) alloc.Pt
 			nextcap = 2
 		}
 		nptr := allocator.Alloc(4 + 4*int(nextcap))
-		var ns *Small
-		allocator.Get(nptr, &ns)
+		ns := (*Small)(allocator.GetPtr(nptr))
 		ns.cap = nextcap
 		ns.cnt = s.cnt + 1
 		copy(ns.nums[:i], s.nums[:i])
