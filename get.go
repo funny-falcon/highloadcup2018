@@ -75,14 +75,8 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 			outFields.Sex = true
 			switch string(val) {
 			case "m":
-				/*filters = append(filters, func(acc *Account) bool {
-					return acc.Sex
-				})*/
 				iterators = append(iterators, MaleMap.Iterator(MaxId))
 			case "f":
-				/*filters = append(filters, func(acc *Account) bool {
-					return !acc.Sex
-				})*/
 				iterators = append(iterators, FemaleMap.Iterator(MaxId))
 			default:
 				logf("sex_eq incorrect")
