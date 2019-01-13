@@ -37,6 +37,17 @@ func LoopIter(it Iterator, f func(u []int32) bool) {
 	}
 }
 
+func CountIter(it Iterator) uint32 {
+	last := it.LastSpan()
+	count := uint32(0)
+	for last >= 0 {
+		block, next := it.FetchAndNext(last)
+		count += block.Count()
+		last = next
+	}
+	return count
+}
+
 type Wrapper struct {
 	sync.Mutex
 	Alloc  alloc.Allocator

@@ -1,5 +1,7 @@
 package bitmap
 
+import "math/bits"
+
 type Block [8]uint32
 
 const all = ^uint32(0)
@@ -20,6 +22,14 @@ func (b *Block) Unset(i uint8) bool {
 
 func (b *Block) Has(i uint8) bool {
 	return b[i>>5]&(1<<(i&31)) != 0
+}
+
+func (b *Block) Count() uint32 {
+	sum := 0
+	for _, v := range b {
+		sum += bits.OnesCount32(v)
+	}
+	return uint32(sum)
 }
 
 func BlockMask(lastbit uint8) Block {
