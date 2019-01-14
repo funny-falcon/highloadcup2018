@@ -34,6 +34,18 @@ func (h *Huge) FetchAndNext(span int32) (Block, int32) {
 	return h.B[k], span - SpanSize
 }
 
+func (h *Huge) Stat() (size, compact, count int) {
+	for _, bl := range h.B {
+		size++
+		cnt := bl.Count()
+		if cnt <= 4 {
+			compact++
+		}
+		count += int(cnt)
+	}
+	return
+}
+
 func (h *Huge) Iterator(maxId int32) Iterator {
 	return h
 }

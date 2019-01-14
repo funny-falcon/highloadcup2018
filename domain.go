@@ -110,17 +110,8 @@ var PhoneIndex UniqStrings
 
 var BitmapAlloc alloc.Simple
 
-//var MaleMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
-//var FemaleMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
 var MaleMap = bitmap.Huge{}
 var FemaleMap = bitmap.Huge{}
-
-//var FreeMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
-//var MeetingMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
-//var ComplexMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
-//var FreeOrMeetingMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
-//var MeetingOrComplexMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
-//var FreeOrComplexMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
 var FreeMap = bitmap.Huge{}
 var MeetingMap = bitmap.Huge{}
 var ComplexMap = bitmap.Huge{}
@@ -128,25 +119,12 @@ var FreeOrMeetingMap = bitmap.Huge{}
 var MeetingOrComplexMap = bitmap.Huge{}
 var FreeOrComplexMap = bitmap.Huge{}
 
-var PremiumNow = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
-var PremiumNull = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
-var PremiumNotNull = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
+var PremiumNow = bitmap.Huge{}
+var PremiumNull = bitmap.Huge{}
+var PremiumNotNull = bitmap.Huge{}
 
-var EmailGtIndexes = func() []*bitmap.Wrapper {
-	res := make([]*bitmap.Wrapper, 26)
-	for i := range res {
-		res[i] = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
-	}
-	return res
-}()
-
-var EmailLtIndexes = func() []*bitmap.Wrapper {
-	res := make([]*bitmap.Wrapper, 26)
-	for i := range res {
-		res[i] = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
-	}
-	return res
-}()
+var EmailGtIndexes [26]bitmap.Huge
+var EmailLtIndexes [26]bitmap.Huge
 
 func IndexGtLtEmail(e string, uid int32, set bool) {
 	ch := e[0]
@@ -201,8 +179,8 @@ func GetJoinYear(ts int32) int32 {
 }
 
 var DomainsStrings = SomeStrings{Huge: true}
-var PhoneCodesStrings = SomeStrings{Huge: true}
-var FnameStrings = SomeStrings{Huge: true}
+var PhoneCodesStrings = SomeStrings{}
+var FnameStrings = SomeStrings{}
 var SnameStrings SomeStrings
 var SnameSorted SnameSorting
 var SnameOnce = NewOnce(SnameSorted.Init)

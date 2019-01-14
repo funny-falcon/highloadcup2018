@@ -160,6 +160,25 @@ func Load() {
 			}
 		}()
 	}
+	fmt.Println("SnameStrings ", SnameStrings.Stat())
+	fmt.Println("CityStrings ", CityStrings.Stat())
+	fmt.Println("CountryStrings ", CountryStrings.Stat())
+	fmt.Println("DomainsStrings ", DomainsStrings.Stat())
+	fmt.Println("PhoneCodesStrings ", PhoneCodesStrings.Stat())
+	fmt.Println("FnameStrings ", FnameStrings.Stat())
+	fmt.Println("InterestStrings ", InterestStrings.Stat())
+	fmt.Print("FreeMap ")
+	fmt.Println(FreeMap.Stat())
+	fmt.Print("ComplexMap ")
+	fmt.Println(ComplexMap.Stat())
+	fmt.Print("MeetingMap ")
+	fmt.Println(MeetingMap.Stat())
+	fmt.Print("PremiumNow ")
+	fmt.Println(PremiumNow.Stat())
+	fmt.Print("PremiumNull ")
+	fmt.Println(PremiumNull.Stat())
+	fmt.Print("PremiumNotNull ")
+	fmt.Println(PremiumNotNull.Stat())
 }
 
 /*

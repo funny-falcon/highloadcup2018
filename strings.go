@@ -240,6 +240,25 @@ func (ss *SomeStrings) Add(str string, uid int32) uint32 {
 	return ix
 }
 
+func (ss *SomeStrings) Stat() [9]int {
+	nsz, ncmp, ncnt := ss.Null.Bitmap.(*bitmap.Large).Stat()
+	nnsz, nncmp, nncnt := ss.NotNull.Bitmap.(*bitmap.Large).Stat()
+	var size, compact, count int
+	for i := range ss.Arr {
+		var sz, cmp, cnt int
+		if ss.Huge {
+			sz, cmp, cnt = ss.HugeMaps[i].Stat()
+		} else {
+			lrg := ss.GetIndex(uint32(i + 1)).(*bitmap.Wrapper).Bitmap.(*bitmap.Large)
+			sz, cmp, cnt = lrg.Stat()
+		}
+		size += sz
+		compact += cmp
+		count += cnt
+	}
+	return [9]int{nsz, ncmp, ncnt, nnsz, nncmp, nncnt, size, compact, count}
+}
+
 type Index interface {
 	Set(i int32)
 	Unset(i int32)

@@ -69,6 +69,17 @@ func (l *Large) Unset(allocator alloc.Allocator, ptr alloc.Ptr, ix int32) alloc.
 	return ptr
 }
 
+func (ch *Large) Stat() (size, compact, count int) {
+	size = int(ch.cnt)
+	for _, ch := range ch.chunks[:ch.cnt] {
+		if ch.chnkAndCnt&256 == 0 {
+			compact++
+		}
+		count += int(ch.chnkAndCnt&255) + 1
+	}
+	return
+}
+
 func (ch *Large) Iterator(allocator alloc.Allocator, max int32) Iterator {
 	if ch.cnt == 0 {
 		return EmptyIt

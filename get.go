@@ -357,7 +357,7 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 			for ; birthYear >= 0; birthYear-- {
 				orIters = append(orIters, BirthYearIndexes[birthYear].Iterator(MaxId))
 			}
-			iterators = append(iterators, bitmap.NewOrIterator(orIters))
+			iterators = append(iterators, bitmap.Materialize(bitmap.NewOrIterator(orIters)))
 		case "birth_year":
 			outFields.Birth = true
 			year, err := strconv.Atoi(sval)
@@ -419,11 +419,9 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 			outFields.Premium = true
 			switch sval {
 			case "1":
-				filters = append(filters, func(acc *Account) bool {
-					return acc.PremiumLength != 0
-				})
+				iterators = append(iterators, PremiumNull.Iterator(MaxId))
 			case "0":
-				iterators = append(iterators, PremiumNotNull.GetIterator(MaxId))
+				iterators = append(iterators, PremiumNotNull.Iterator(MaxId))
 			default:
 				logf("premium_null incorrect")
 				correct = false
