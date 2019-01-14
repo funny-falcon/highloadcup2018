@@ -203,7 +203,9 @@ func (us *UniqStrings) ResetUser(ix uint32, uid int32) {
 type SomeStrings struct {
 	sync.Mutex
 	StringsTable
+	Huge         bool
 	OtherStrings []string
+	HugeMaps     []bitmap.Huge
 }
 
 func (ss *SomeStrings) Add(str string, uid int32) uint32 {
@@ -225,24 +227,45 @@ func (ss *SomeStrings) Add(str string, uid int32) uint32 {
 			ss.OtherStrings = append(ss.OtherStrings, ss.StringsTable.GetStr(ix))
 		}
 	*/
-	hndl := ss.GetHndl(ix)
-	wr := bitmap.Wrap(&BitmapAlloc, hndl.HndlAsPtr(), bitmap.LargeEmpty)
-	wr.Set(uid)
+	if ss.Huge {
+		for int(ix) >= len(ss.HugeMaps) {
+			ss.HugeMaps = append(ss.HugeMaps, bitmap.Huge{})
+		}
+		ss.HugeMaps[ix].Set(uid)
+	} else {
+		hndl := ss.GetHndl(ix)
+		wr := bitmap.Wrap(&BitmapAlloc, hndl.HndlAsPtr(), bitmap.LargeEmpty)
+		wr.Set(uid)
+	}
 	return ix
 }
 
-func (ss *SomeStrings) GetIndex(ix uint32) *bitmap.Wrapper {
+type Index interface {
+	Set(i int32)
+	Unset(i int32)
+	Iterator(m int32) bitmap.Iterator
+}
+
+func (ss *SomeStrings) GetIndex(ix uint32) Index {
 	if ix == 0 {
 		return ss.Null
 	}
-	return bitmap.Wrap(&BitmapAlloc, ss.GetHndl(ix).HndlAsPtr(), bitmap.LargeEmpty)
+	if !ss.Huge {
+		return bitmap.Wrap(&BitmapAlloc, ss.GetHndl(ix).HndlAsPtr(), bitmap.LargeEmpty)
+	} else {
+		return &ss.HugeMaps[ix]
+	}
 }
 
 func (ss *SomeStrings) GetIter(ix uint32, max int32) bitmap.Iterator {
 	if ix == 0 {
 		return bitmap.EmptyIt
 	}
-	return bitmap.Wrap(&BitmapAlloc, ss.GetHndl(ix).HndlAsPtr(), bitmap.LargeEmpty).Iterator(max)
+	if !ss.Huge {
+		return bitmap.Wrap(&BitmapAlloc, ss.GetHndl(ix).HndlAsPtr(), bitmap.LargeEmpty).Iterator(max)
+	} else {
+		return ss.HugeMaps[ix].Iterator(max)
+	}
 }
 
 /*

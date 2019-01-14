@@ -226,7 +226,7 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 			}
 			orIters := make([]bitmap.Iterator, j-i)
 			for k := i; k < j; k++ {
-				orIters[k-i] = SnameStrings.GetIndex(SnameSorted.Ix[k]).Iterator(MaxId)
+				orIters[k-i] = SnameStrings.GetIter(SnameSorted.Ix[k], MaxId)
 			}
 			iterators = append(iterators, bitmap.NewOrIterator(orIters))
 		case "sname_null":

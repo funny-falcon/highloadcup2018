@@ -1,12 +1,16 @@
 package bitmap
 
-import "math/bits"
+import (
+	"math/bits"
+	"unsafe"
+)
 
 type Block [8]uint32
 
 const all = ^uint32(0)
 
 var AllBlock = Block{all, all, all, all, all, all, all, all}
+var ZeroBlock = Block{}
 
 func (b *Block) Set(i uint8) bool {
 	r := b.Has(i)
@@ -50,14 +54,22 @@ func BlockMask(lastbit uint8) Block {
 }
 
 func (b *Block) Intersect(o Block) {
-	b[0] &= o[0]
-	b[1] &= o[1]
-	b[2] &= o[2]
-	b[3] &= o[3]
-	b[4] &= o[4]
-	b[5] &= o[5]
-	b[6] &= o[6]
-	b[7] &= o[7]
+	b4 := (*[4]uint64)(unsafe.Pointer(b))
+	o4 := (*[4]uint64)(unsafe.Pointer(&o))
+	b4[0] &= o4[0]
+	b4[1] &= o4[1]
+	b4[2] &= o4[2]
+	b4[3] &= o4[3]
+	/*
+		b[0] &= o[0]
+		b[1] &= o[1]
+		b[2] &= o[2]
+		b[3] &= o[3]
+		b[4] &= o[4]
+		b[5] &= o[5]
+		b[6] &= o[6]
+		b[7] &= o[7]
+	*/
 }
 
 func (b *Block) Union(o Block) {

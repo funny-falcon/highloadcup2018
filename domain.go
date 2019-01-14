@@ -109,15 +109,24 @@ var EmailIndex UniqStrings
 var PhoneIndex UniqStrings
 
 var BitmapAlloc alloc.Simple
-var MaleMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
-var FemaleMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
 
-var FreeMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
-var MeetingMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
-var ComplexMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
-var FreeOrMeetingMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
-var MeetingOrComplexMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
-var FreeOrComplexMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
+//var MaleMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
+//var FemaleMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
+var MaleMap = bitmap.Huge{}
+var FemaleMap = bitmap.Huge{}
+
+//var FreeMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
+//var MeetingMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
+//var ComplexMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
+//var FreeOrMeetingMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
+//var MeetingOrComplexMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
+//var FreeOrComplexMap = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
+var FreeMap = bitmap.Huge{}
+var MeetingMap = bitmap.Huge{}
+var ComplexMap = bitmap.Huge{}
+var FreeOrMeetingMap = bitmap.Huge{}
+var MeetingOrComplexMap = bitmap.Huge{}
+var FreeOrComplexMap = bitmap.Huge{}
 
 var PremiumNow = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
 var PremiumNull = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
@@ -191,15 +200,15 @@ func GetJoinYear(ts int32) int32 {
 	return int32(time.Unix(int64(ts), 0).Year() - 2011)
 }
 
-var DomainsStrings SomeStrings
-var PhoneCodesStrings SomeStrings
-var FnameStrings SomeStrings
+var DomainsStrings = SomeStrings{Huge: true}
+var PhoneCodesStrings = SomeStrings{Huge: true}
+var FnameStrings = SomeStrings{Huge: true}
 var SnameStrings SomeStrings
 var SnameSorted SnameSorting
 var SnameOnce = NewOnce(SnameSorted.Init)
 var CityStrings SomeStrings
 var CountryStrings SomeStrings
-var InterestStrings SomeStrings
+var InterestStrings = SomeStrings{Huge: true}
 
 func GetStatusIx(status string) (uint8, bool) {
 	switch status {
