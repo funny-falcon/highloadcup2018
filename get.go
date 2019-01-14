@@ -718,10 +718,18 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 		}
 		groups = make([]counter, len(InterestStrings.Arr))
 		for i := range InterestStrings.Arr {
-			iter := InterestStrings.GetIter(uint32(i+1), MaxId)
-			cnt := bitmap.CountIter(bitmap.NewAndIterator([]bitmap.Iterator{iterator, iter}))
-			groups[i] = counter{uint32(i + 1), float64(cnt)}
+			groups[i] = counter{u: uint32(i + 1)}
 		}
+		bitmap.LoopIterBlock(iterator, func(bl bitmap.Block, span int32) bool {
+			for i, m := range InterestStrings.HugeMaps {
+				var block bitmap.Block
+				block, _ = m.FetchAndNext(span)
+				block.Intersect(bl)
+				groups[i].s += float64(block.Count())
+			}
+			return true
+		})
+
 		groups = SortGroupLimit(limit, order, groups, func(idi, idj uint32) bool {
 			return InterestStrings.GetStr(idi) < InterestStrings.GetStr(idj)
 		})

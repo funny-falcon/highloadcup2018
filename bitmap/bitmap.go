@@ -39,6 +39,18 @@ func LoopIter(it Iterator, f func(u []int32) bool) {
 	}
 }
 
+func LoopIterBlock(it Iterator, f func(bl Block, span int32) bool) {
+	last := it.LastSpan()
+	it.Reset()
+	for last >= 0 {
+		block, next := it.FetchAndNext(last)
+		if !block.Empty() && !f(block, last) {
+			break
+		}
+		last = next
+	}
+}
+
 func CountIter(it Iterator) uint32 {
 	last := it.LastSpan()
 	count := uint32(0)

@@ -282,9 +282,12 @@ func (mi *MaterializedIterator) Reset() {
 }
 
 func (mi *MaterializedIterator) FetchAndNext(span int32) (Block, int32) {
-	ix := mi.L + JumpSearch(len(mi.Elems)-mi.L, func(i int) bool {
-		return span >= mi.Elems[mi.L+i].Span
-	})
+	ix := mi.L
+	if ix >= len(mi.Elems) || ix < 0 {
+		return Block{}, NoNext
+	}
+	for ; span < mi.Elems[ix].Span; ix++ {
+	}
 	mi.L = ix + 1
 	if mi.L >= len(mi.Elems) {
 		return mi.Elems[ix].Block, NoNext
