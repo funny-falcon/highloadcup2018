@@ -11,6 +11,11 @@ type IBitmap interface {
 }
 
 type IBitmapSizer interface {
+	IBitmap
+	ISizer
+}
+
+type ISizer interface {
 	GetSize() uint32
 }
 

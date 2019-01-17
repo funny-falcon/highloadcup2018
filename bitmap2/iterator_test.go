@@ -16,7 +16,7 @@ func TestIterator(t *testing.T) {
 		rnd := rand.New(rand.NewSource(int64(rrr)))
 		newIts := []func(ds dumbSet) bitmap2.IBitmap{
 			func(ds dumbSet) bitmap2.IBitmap {
-				return ds
+				return ds.Bitmap()
 			},
 			func(ds dumbSet) bitmap2.IBitmap {
 				bm := bitmap2.Bitmap{}

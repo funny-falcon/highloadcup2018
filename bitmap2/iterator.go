@@ -60,7 +60,7 @@ type AndIterator struct {
 }
 
 func SizeOf(b IBitmap) uint32 {
-	if szr, ok := b.(IBitmapSizer); ok {
+	if szr, ok := b.(ISizer); ok {
 		return szr.GetSize()
 	}
 	return 1 << 30

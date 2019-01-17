@@ -97,21 +97,31 @@ func (ds dumbSet) Len() int           { return len(ds) }
 func (ds dumbSet) Less(i, j int) bool { return ds[i] > ds[j] }
 func (ds dumbSet) Swap(i, j int)      { ds[i], ds[j] = ds[j], ds[i] }
 
-func (ds dumbSet) Iterator() (bitmap2.Iterator, int32) {
+func (ds dumbSet) Bitmap() bitmap2.IBitmapSizer {
 	sort.Sort(ds)
+	return dumbMap(ds)
+}
+
+type dumbMap []int32
+
+func (ds dumbMap) GetSize() uint32 {
+	return uint32(len(ds))
+}
+
+func (ds dumbMap) Iterator() (bitmap2.Iterator, int32) {
 	return ds, ds.LastSpan()
 }
 
-func (ds dumbSet) LastSpan() int32 {
+func (ds dumbMap) LastSpan() int32 {
 	if len(ds) == 0 {
 		return bitmap2.NoNext
 	}
 	return ds[0] &^ bitmap2.BlockMask
 }
 
-func (ds dumbSet) Reset() {}
+func (ds dumbMap) Reset() {}
 
-func (ds dumbSet) FetchAndNext(span int32) (*bitmap2.Block, int32) {
+func (ds dumbMap) FetchAndNext(span int32) (*bitmap2.Block, int32) {
 	var block bitmap2.Block
 	if span < 0 {
 		return &block, bitmap2.NoNext
