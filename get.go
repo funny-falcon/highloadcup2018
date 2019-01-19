@@ -28,6 +28,14 @@ func getHandler(ctx *fasthttp.RequestCtx, path []byte) {
 			return
 		}
 		doSuggest(ctx, id)
+	case bytes.HasSuffix(path, []byte("/recommend/")):
+		ids := path[:bytes.IndexByte(path, '/')]
+		id, err := strconv.Atoi(string(ids))
+		if err != nil {
+			ctx.SetStatusCode(400)
+			return
+		}
+		doRecommend(ctx, id)
 	}
 
 }
@@ -1126,9 +1134,169 @@ Outter:
 	config.ReturnStream(stream)
 }
 
+func doRecommend(ctx *fasthttp.RequestCtx, iid int) {
+	id := int32(iid)
+	if int(id) != iid {
+		ctx.SetStatusCode(404)
+		return
+	}
+
+	acc := HasAccount(id)
+	if acc == nil {
+		ctx.SetStatusCode(404)
+		return
+	}
+
+	args := ctx.QueryArgs()
+	var maps []bitmap.IBitmap
+	correct := true
+	emptyRes := false
+	limit := -1
+
+	args.VisitAll(func(key []byte, val []byte) {
+		if !correct {
+			return
+		}
+		//logf("arg %s: %s", key, val)
+
+		skey := string(key)
+		sval := string(val)
+		switch skey {
+		case "limit":
+			var err error
+			limit, err = strconv.Atoi(sval)
+			if err != nil || limit == 0 {
+				logf("limit: %s", err)
+				correct = false
+			}
+		case "country":
+			if len(sval) == 0 {
+				correct = false
+				return
+			}
+			ix := CountryStrings.Find(sval)
+			if ix == 0 {
+				logf("country %s not found", sval)
+				emptyRes = true
+				return
+			}
+			maps = append(maps, CountryStrings.GetMap(ix))
+		case "city":
+			if len(sval) == 0 {
+				correct = false
+				return
+			}
+			ix := CityStrings.Find(sval)
+			if ix == 0 {
+				logf("city %s not found", sval)
+				emptyRes = true
+				return
+			}
+			maps = append(maps, CityStrings.GetMap(ix))
+		case "query_id":
+			// ignore
+		default:
+			logf("default incorrect")
+			correct = false
+		}
+	})
+	logf("correct %v limit %d maps %v", correct, limit, maps)
+
+	if !correct || limit <= 0 {
+		logf("correct %v", correct)
+		ctx.SetStatusCode(400)
+		return
+	} else if emptyRes {
+		logf("empty result")
+		ctx.SetStatusCode(200)
+		ctx.SetBody(EmptyFilterRes)
+		return
+	}
+
+	if acc.Sex {
+		maps = append(maps, &FemaleMap)
+	} else {
+		maps = append(maps, &MaleMap)
+	}
+
+	rmap := bitmap.NewAndBitmap(maps)
+
+	var intIdsH bitmap.BlockUnroll
+	interests := Interests[id]
+	intIds := interests.Unroll(0, &intIdsH)
+	maps = make([]bitmap.IBitmap, len(intIds))
+	for i, ii := range intIds {
+		maps[i] = InterestStrings.Maps[ii]
+	}
+
+	rmap = bitmap.NewAndBitmap([]bitmap.IBitmap{rmap, bitmap.NewOrBitmap(maps)})
+
+	recs := Recommends{
+		Birth: acc.Birth,
+		Limit: limit,
+	}
+
+	bitmap.LoopMap(rmap, func(uids []int32) bool {
+		for _, uid := range uids {
+			cnt := interests.IntersectNew(&Interests[uid]).CountV()
+			othacc := &Accounts[uid]
+			recs.Add(othacc, int(cnt))
+		}
+		return true
+	})
+
+	recs.Heapify()
+
+	uids := make([]int32, len(recs.Accs))
+	l := len(uids) - 1
+	for i := range uids {
+		uids[l-i] = recs.Accs[0].Uid
+		recs.Pop()
+	}
+
+	ctx.SetStatusCode(200)
+	ctx.SetContentType("application/json")
+	stream := config.BorrowStream(nil)
+	stream.Write([]byte(`{"accounts":[`))
+	outFields := OutFields{Status: true, Fname: true, Sname: true, Birth: true, Premium: true,
+		Country: false}
+	for i, id := range uids {
+		outAccount(&outFields, &Accounts[id], stream)
+		if i != len(uids)-1 {
+			stream.WriteMore()
+		}
+	}
+	stream.Write([]byte(`]}`))
+	ctx.SetBody(stream.Buffer())
+	config.ReturnStream(stream)
+}
+
 func outAccount(out *OutFields, acc *Account, stream *jsoniter.Stream) {
 	stream.Write([]byte(`{"id":`))
 	stream.WriteInt32(acc.Uid)
+
+	if out.Premium && acc.PremiumLength != 0 {
+		stream.Write([]byte(`,"premium":{"start":`))
+		stream.WriteInt32(acc.PremiumStart)
+		stream.Write([]byte(`,"finish":`))
+		stream.WriteInt32(acc.PremiumStart + PremiumLengths[acc.PremiumLength])
+		stream.WriteObjectEnd()
+	}
+
+	if out.Sname && acc.Sname != 0 {
+		stream.Write([]byte(`,"sname":`))
+		stream.WriteString(SnameStrings.GetStr(uint32(acc.Sname)))
+	}
+	if out.Fname && acc.Fname != 0 {
+		stream.Write([]byte(`,"fname":`))
+		stream.WriteString(FnameStrings.GetStr(uint32(acc.Fname)))
+	}
+
+	if out.Status {
+		stream.Write([]byte(`,"status":`))
+		stream.WriteString(GetStatus(acc.Status))
+	}
+
 	stream.Write([]byte(`,"email":`))
 	stream.WriteString(EmailIndex.GetStr(acc.Email))
 
@@ -1139,21 +1307,9 @@ func outAccount(out *OutFields, acc *Account, stream *jsoniter.Stream) {
 			stream.Write([]byte(`,"sex":"f"`))
 		}
 	}
-	if out.Status {
-		stream.Write([]byte(`,"status":`))
-		stream.WriteString(GetStatus(acc.Status))
-	}
 	if out.Phone && acc.Phone != 0 {
 		stream.Write([]byte(`,"phone":`))
 		stream.WriteString(PhoneIndex.GetStr(acc.Phone))
-	}
-	if out.Fname && acc.Fname != 0 {
-		stream.Write([]byte(`,"fname":`))
-		stream.WriteString(FnameStrings.GetStr(uint32(acc.Fname)))
-	}
-	if out.Sname && acc.Sname != 0 {
-		stream.Write([]byte(`,"sname":`))
-		stream.WriteString(SnameStrings.GetStr(uint32(acc.Sname)))
 	}
 	if out.City && acc.City != 0 {
 		stream.Write([]byte(`,"city":`))
@@ -1170,13 +1326,6 @@ func outAccount(out *OutFields, acc *Account, stream *jsoniter.Stream) {
 	if out.Joined {
 		stream.Write([]byte(`,"joined":`))
 		stream.WriteInt32(acc.Joined)
-	}
-	if out.Premium && acc.PremiumLength != 0 {
-		stream.Write([]byte(`,"premium":{"finish":`))
-		stream.WriteInt32(acc.PremiumStart + PremiumLengths[acc.PremiumLength])
-		stream.Write([]byte(`,"start":`))
-		stream.WriteInt32(acc.PremiumStart)
-		stream.WriteObjectEnd()
 	}
 	stream.WriteObjectEnd()
 }

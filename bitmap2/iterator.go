@@ -167,7 +167,7 @@ func (ob *OrBitmap) Iterator() (Iterator, int32) {
 	if len(oi.It) == 0 {
 		return EmptyIt, NoNext
 	}
-	oi.heapify()
+	oi.Heapify()
 	return oi, last
 }
 
@@ -191,18 +191,18 @@ func (oi *OrIterator) FetchAndNext(span int32) (*Block, int32) {
 		b, n := cur.FetchAndNext(span)
 		oi.B.Union(b)
 		cur.Last = n
-		oi.siftUp(0)
+		oi.SiftUp(0)
 	}
 	return &oi.B, cur.Last
 }
 
-func (ob *OrIterator) heapify() {
+func (ob *OrIterator) Heapify() {
 	for i := len(ob.It); i > 0; i-- {
-		ob.siftUp(i - 1)
+		ob.SiftUp(i - 1)
 	}
 }
 
-func (ob *OrIterator) siftUp(i int) {
+func (ob *OrIterator) SiftUp(i int) {
 	el := ob.It[i]
 	l := len(ob.It)
 	for i*2+1 < l {

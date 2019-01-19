@@ -44,9 +44,17 @@ func (b *Block) Count() uint32 {
 	return uint32(bits.OnesCount64(b[0]) + bits.OnesCount64(b[1]))
 }
 
+func (b Block) CountV() uint32 {
+	return uint32(bits.OnesCount64(b[0]) + bits.OnesCount64(b[1]))
+}
+
 func (b *Block) Intersect(o *Block) {
 	b[0] &= o[0]
 	b[1] &= o[1]
+}
+
+func (b *Block) IntersectNew(o *Block) Block {
+	return Block{b[0] & o[0], b[1] & o[1]}
 }
 
 func (b *Block) Union(o *Block) {
