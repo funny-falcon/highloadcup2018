@@ -10,8 +10,7 @@ import (
 func TestSmall(t *testing.T) {
 	rnd := rand.New(rand.NewSource(1))
 	gen := func() bitmap2.IMutBitmap {
-		var p bitmap2.SmallPtr
-		return &bitmap2.Small{&p}
+		return &bitmap2.Small{}
 	}
 	testIt(t, gen, 200, func() int32 { return rnd.Int31n(1 << 20) })
 	testIt(t, gen, 120, func() int32 { return rnd.Int31n(1 << 7) })
@@ -27,8 +26,7 @@ func TestSmall(t *testing.T) {
 func TestLikes(t *testing.T) {
 	rnd := rand.New(rand.NewSource(1))
 	gen := func() bitmap2.IMutBitmap {
-		var p bitmap2.LikesPtr
-		return &bitmap2.Likes{&p}
+		return &bitmap2.Likes{}
 	}
 	testIt(t, gen, 200, func() int32 { return rnd.Int31n(1 << 20) })
 	testIt(t, gen, 120, func() int32 { return rnd.Int31n(1 << 7) })

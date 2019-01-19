@@ -5,6 +5,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
+	"runtime/debug"
+	"runtime/pprof"
+
+	"github.com/funny-falcon/highloadcup2018/alloc2"
+	bitmap "github.com/funny-falcon/highloadcup2018/bitmap2"
 
 	jsoniter "github.com/json-iterator/go"
 )
@@ -41,6 +47,16 @@ type AccountsIn struct {
 	Accounts []AccountIn `json:"accounts"`
 }
 
+func Compact() {
+	for i := range Accounts {
+		acc := &Accounts[i]
+		bitmap.SmallAlloc.Compact(&acc.Likes)
+	}
+	for i := range Likers {
+		bitmap.LikesAlloc.Compact(&Likers[i])
+	}
+}
+
 func Load() {
 	optfile, err := os.Open(*path + "options.txt")
 	if err != nil {
@@ -57,7 +73,8 @@ func Load() {
 		log.Fatal(err)
 	}
 	defer rdr.Close()
-	for _, f := range rdr.File {
+	debug.SetGCPercent(5)
+	for nf, f := range rdr.File {
 		func() {
 			rc, err := f.Open()
 			if err != nil {
@@ -145,40 +162,76 @@ func Load() {
 					ix := InterestStrings.Add(interest, acc.Uid)
 					acc.SetInterest(ix)
 				}
-				var likes Likes
-				//log.Println(accin.Likes)
-				for i, like := range accin.Likes {
-					likes.Likes[i].UidAndCnt = like.Id << LikeUidShift
-					likes.Likes[i].AvgTs = like.Ts
-					SureLikers(like.Id).Set(acc.Uid)
+				var likes bitmap.Small
+				for _, like := range accin.Likes {
+					likes.Set(like.Id)
+					SureLikers(like.Id).SetTs(acc.Uid, like.Ts)
 				}
-				likes.Simplify()
-				acc.Likes = likes.Alloc()
+				acc.Likes = likes.Uintptr()
 			}
 			if iter.Error != nil {
 				log.Fatal("Error reading accounts: ", iter.Error)
 			}
+			if (nf+1)%2 == 0 {
+				Compact()
+			}
+			/*
+				switch nf {
+				case 40:
+					debug.SetGCPercent(10)
+				}
+			*/
 		}()
 	}
-	fmt.Println("SnameStrings ", SnameStrings.Stat())
-	fmt.Println("CityStrings ", CityStrings.Stat())
-	fmt.Println("CountryStrings ", CountryStrings.Stat())
-	fmt.Println("DomainsStrings ", DomainsStrings.Stat())
-	fmt.Println("PhoneCodesStrings ", PhoneCodesStrings.Stat())
-	fmt.Println("FnameStrings ", FnameStrings.Stat())
-	fmt.Println("InterestStrings ", InterestStrings.Stat())
-	fmt.Print("FreeMap ")
-	fmt.Println(FreeMap.Stat())
-	fmt.Print("ComplexMap ")
-	fmt.Println(ComplexMap.Stat())
-	fmt.Print("MeetingMap ")
-	fmt.Println(MeetingMap.Stat())
-	fmt.Print("PremiumNow ")
-	fmt.Println(PremiumNow.Stat())
-	fmt.Print("PremiumNull ")
-	fmt.Println(PremiumNull.Stat())
-	fmt.Print("PremiumNotNull ")
-	fmt.Println(PremiumNotNull.Stat())
+	debug.SetGCPercent(20)
+	fmt.Println("LikesAlloc ", bitmap.LikesAlloc.TotalAlloc, bitmap.LikesAlloc.TotalFree,
+		len(bitmap.LikesAlloc.Free)*alloc2.ChunkSize)
+	fmt.Println("SmallAlloc ", bitmap.SmallAlloc.TotalAlloc, bitmap.SmallAlloc.TotalFree,
+		len(bitmap.SmallAlloc.Free)*alloc2.ChunkSize)
+	//bitmap.SmallAlloc.Log = "small"
+	Compact()
+	bitmap.SmallAlloc.FreeFree()
+	bitmap.LikesAlloc.FreeFree()
+	fmt.Println("LikesAlloc ", bitmap.LikesAlloc.TotalAlloc, bitmap.LikesAlloc.TotalFree,
+		len(bitmap.LikesAlloc.Free)*alloc2.ChunkSize)
+	fmt.Println("SmallAlloc ", bitmap.SmallAlloc.TotalAlloc, bitmap.SmallAlloc.TotalFree,
+		len(bitmap.SmallAlloc.Free)*alloc2.ChunkSize)
+	fmt.Println("StringsAlloc ", StringAlloc.TotalAlloc, StringAlloc.TotalFree,
+		len(StringAlloc.Free)*alloc2.ChunkSize)
+	fmt.Println("TotalAlloc ", alloc2.ChunkGenerator.TotalAlloc)
+
+	if *memprofile != "" {
+		f, err := os.Create(*memprofile)
+		if err != nil {
+			log.Fatal("could not create memory profile: ", err)
+		}
+		runtime.GC() // get up-to-date statistics
+		if err := pprof.WriteHeapProfile(f); err != nil {
+			log.Fatal("could not write memory profile: ", err)
+		}
+		f.Close()
+	}
+	/*
+		fmt.Println("SnameStrings ", SnameStrings.Stat())
+		fmt.Println("CityStrings ", CityStrings.Stat())
+		fmt.Println("CountryStrings ", CountryStrings.Stat())
+		fmt.Println("DomainsStrings ", DomainsStrings.Stat())
+		fmt.Println("PhoneCodesStrings ", PhoneCodesStrings.Stat())
+		fmt.Println("FnameStrings ", FnameStrings.Stat())
+		fmt.Println("InterestStrings ", InterestStrings.Stat())
+		fmt.Print("FreeMap ")
+		fmt.Println(FreeMap.Stat())
+		fmt.Print("ComplexMap ")
+		fmt.Println(ComplexMap.Stat())
+		fmt.Print("MeetingMap ")
+		fmt.Println(MeetingMap.Stat())
+		fmt.Print("PremiumNow ")
+		fmt.Println(PremiumNow.Stat())
+		fmt.Print("PremiumNull ")
+		fmt.Println(PremiumNull.Stat())
+		fmt.Print("PremiumNotNull ")
+		fmt.Println(PremiumNotNull.Stat())
+	*/
 }
 
 /*

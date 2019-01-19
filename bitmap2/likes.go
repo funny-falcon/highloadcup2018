@@ -6,13 +6,13 @@ import (
 	"github.com/funny-falcon/highloadcup2018/alloc2"
 )
 
-var LikesAlloc = alloc2.Simple{}
+const LikeUidShift = 8
+const LikeUidMask = (^int32(0)) << LikeUidShift
+const LikeCntMask = (1 << LikeUidShift) - 1
+
+var LikesAlloc = alloc2.Simple{Log: ""}
 
 type Likes struct {
-	*LikesPtr
-}
-
-type LikesPtr struct {
 	*LikesImpl
 }
 
@@ -27,8 +27,12 @@ type LikesElem struct {
 	Ts        int32
 }
 
-func GetLikes(p *uintptr) Likes {
-	return Likes{LikesPtr: (*LikesPtr)(unsafe.Pointer(p))}
+func GetLikes(p *uintptr) *Likes {
+	return (*Likes)(unsafe.Pointer(p))
+}
+
+func (s *Likes) Uintptr() uintptr {
+	return uintptr(unsafe.Pointer(s.LikesImpl))
 }
 
 func (s *Likes) GetSize() uint32 {
@@ -41,9 +45,11 @@ func (s *Likes) Set(id int32) {
 
 func (s *Likes) SetTs(id int32, ts int32) {
 	if s.LikesImpl == nil {
-		s.LikesImpl = (*LikesImpl)(LikesAlloc.Alloc(20))
+		ncap := uint16(2)
+		s.LikesImpl = (*LikesImpl)(LikesAlloc.Alloc(4 + int(ncap)*8))
+		//fmt.Printf("%p alloc ncap %d\n", s.LikesImpl, 20)
 		s.Size = 1
-		s.Cap = 2
+		s.Cap = ncap
 		s.Data[0] = LikesElem{id << 8, ts}
 		return
 	}
@@ -51,16 +57,20 @@ func (s *Likes) SetTs(id int32, ts int32) {
 	if ix < int(s.Size) && s.Data[ix].UidAndCnt>>8 == id {
 		el := &s.Data[ix]
 		cnt := int64(el.UidAndCnt&255) + 1
-		el.Ts = int32(int64(el.Ts) * cnt / (cnt + 1))
+		el.Ts = int32((int64(el.Ts)*cnt + int64(ts)) / (cnt + 1))
 		el.UidAndCnt++
 		return
 	}
 	if s.Size == s.Cap {
 		ncap := s.Cap * 2
-		newImpl := (*LikesImpl)(LikesAlloc.Alloc(4 + int(ncap)*8))
+		ptr := LikesAlloc.Alloc(4 + int(ncap)*8)
+		//fmt.Printf("%p alloc ncap %d\n", ptr, 4+int(ncap)*8)
+		newImpl := (*LikesImpl)(ptr)
 		newImpl.Size = s.Size
 		newImpl.Cap = ncap
 		copy(newImpl.Data[:s.Size], s.Data[:s.Size])
+		//fmt.Printf("%p dealloc ncap %d\n", s.LikesImpl, 4+int(s.Cap)*8)
+		LikesAlloc.Dealloc(unsafe.Pointer(s.LikesImpl))
 		s.LikesImpl = newImpl
 	}
 	copy(s.Data[ix+1:s.Size+1], s.Data[ix:s.Size])

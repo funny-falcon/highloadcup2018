@@ -5,12 +5,11 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/funny-falcon/highloadcup2018/bitmap"
-
-	"github.com/funny-falcon/highloadcup2018/alloc"
+	"github.com/funny-falcon/highloadcup2018/alloc2"
+	bitmap "github.com/funny-falcon/highloadcup2018/bitmap2"
 )
 
-var StringAlloc alloc.Simple
+var StringAlloc alloc2.Simple
 
 const StringShards = 64
 const ShardFind = (1 << 32) / StringShards
@@ -18,28 +17,29 @@ const ShardFind = (1 << 32) / StringShards
 type StringsTable struct {
 	Tbl     []uint32
 	Arr     []StringHandle
-	Null    *bitmap.Wrapper
-	NotNull *bitmap.Wrapper
+	Null    bitmap.Bitmap
+	NotNull bitmap.Bitmap
 }
 
 type StringHandle struct {
-	Hash   uint32
-	Ptr    alloc.Ptr
-	Handle int32
+	Ptr    uintptr
+	Handle uintptr
 }
 
 type String struct {
+	Hash uint32
 	Len  uint8
 	Data [256]uint8
 }
 
-func (h *StringHandle) Str() string {
-	ustr := (*String)(StringAlloc.GetPtr(h.Ptr))
-	return ustr.String()
+func (h *StringHandle) Hash() uint32 {
+	ustr := (*String)(unsafe.Pointer(h.Ptr))
+	return ustr.Hash
 }
 
-func (h *StringHandle) HndlAsPtr() *alloc.Ptr {
-	return (*alloc.Ptr)(unsafe.Pointer(&h.Handle))
+func (h *StringHandle) Str() string {
+	ustr := (*String)(unsafe.Pointer(h.Ptr))
+	return ustr.String()
 }
 
 func (us *String) String() string {
@@ -75,19 +75,20 @@ func (us *StringsTable) Insert(s string) (uint32, bool) {
 	for us.Tbl[pos] != 0 {
 		apos := us.Tbl[pos]
 		hndl := us.Arr[apos-1]
-		if hndl.Hash == h && hndl.Str() == s {
+		if hndl.Hash() == h && hndl.Str() == s {
 			return apos, false
 		}
 		pos = (pos + d) & mask
 		d++
 	}
 
-	ptr := StringAlloc.Alloc(len(s) + 1)
-	ustr := (*String)(StringAlloc.GetPtr(ptr))
+	ptr := StringAlloc.Alloc(len(s) + 1 + 4)
+	ustr := (*String)(ptr)
+	ustr.Hash = h
 	ustr.Len = uint8(len(s))
 	copy(ustr.Data[:], s)
 
-	us.Arr = append(us.Arr, StringHandle{Hash: h, Ptr: ptr})
+	us.Arr = append(us.Arr, StringHandle{Ptr: uintptr(ptr)})
 	apos := uint32(len(us.Arr))
 	us.Tbl[pos] = apos
 	return apos, true
@@ -103,7 +104,7 @@ func (us *StringsTable) Find(s string) uint32 {
 	for us.Tbl[pos] != 0 {
 		apos := us.Tbl[pos]
 		hndl := us.Arr[apos-1]
-		if hndl.Hash == h && hndl.Str() == s {
+		if hndl.Hash() == h && hndl.Str() == s {
 			return apos
 		}
 		pos = (pos + d) & mask
@@ -131,7 +132,7 @@ func (ush *StringsTable) Rebalance() {
 	mask := uint32(newcapa - 1)
 	newTbl := make([]uint32, newcapa, newcapa)
 	for i, hndl := range ush.Arr {
-		pos, d := hndl.Hash&mask, uint32(1)
+		pos, d := hndl.Hash()&mask, uint32(1)
 		for newTbl[pos] != 0 {
 			pos = (pos + d) & mask
 			d++
@@ -142,10 +143,6 @@ func (ush *StringsTable) Rebalance() {
 }
 
 func (ush *StringsTable) SetNull(uid int32, isNull bool) {
-	if ush.Null == nil {
-		ush.Null = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
-		ush.NotNull = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
-	}
 	if isNull {
 		ush.Null.Set(uid)
 		ush.NotNull.Unset(uid)
@@ -158,8 +155,6 @@ func (ush *StringsTable) SetNull(uid int32, isNull bool) {
 type UniqStrings struct {
 	sync.Mutex
 	StringsTable
-	Null    *bitmap.Wrapper
-	NotNull *bitmap.Wrapper
 }
 
 func (us *UniqStrings) InsertUid(s string, uid int32) (uint32, bool) {
@@ -178,10 +173,10 @@ func (us *UniqStrings) InsertUid(s string, uid int32) (uint32, bool) {
 	ix, isNew := us.Insert(s)
 	hndl := us.GetHndl(ix)
 	if isNew {
-		hndl.Handle = -1
+		hndl.Handle = 0
 	}
-	if hndl.Handle == -1 {
-		hndl.Handle = uid
+	if hndl.Handle == 0 {
+		hndl.Handle = uintptr(uid)
 		return ix, true
 	}
 	return ix, false
@@ -194,18 +189,17 @@ func (us *UniqStrings) ResetUser(ix uint32, uid int32) {
 	us.Lock()
 	defer us.Unlock()
 	hndl := us.GetHndl(ix)
-	if hndl.Handle != uid {
+	if hndl.Handle != uintptr(uid) {
 		panic(fmt.Sprintf("User %d is not owner of string %s", uid, hndl.Str()))
 	}
-	hndl.Handle = -1
+	hndl.Handle = 0
 }
 
 type SomeStrings struct {
 	sync.Mutex
 	StringsTable
-	Huge         bool
-	OtherStrings []string
-	HugeMaps     []bitmap.Huge
+	Huge bool
+	Maps []bitmap.IMutBitmap
 }
 
 func (ss *SomeStrings) Add(str string, uid int32) uint32 {
@@ -222,24 +216,18 @@ func (ss *SomeStrings) Add(str string, uid int32) uint32 {
 	}
 
 	ix, _ := ss.Insert(str)
-	/*
-		if int(ix) == len(ss.OtherStrings)+1 {
-			ss.OtherStrings = append(ss.OtherStrings, ss.StringsTable.GetStr(ix))
+	for int(ix) > len(ss.Maps) {
+		if ss.Huge {
+			ss.Maps = append(ss.Maps, &bitmap.Huge{})
+		} else {
+			ss.Maps = append(ss.Maps, &bitmap.Bitmap{})
 		}
-	*/
-	if ss.Huge {
-		for int(ix) >= len(ss.HugeMaps) {
-			ss.HugeMaps = append(ss.HugeMaps, bitmap.Huge{})
-		}
-		ss.HugeMaps[ix].Set(uid)
-	} else {
-		hndl := ss.GetHndl(ix)
-		wr := bitmap.Wrap(&BitmapAlloc, hndl.HndlAsPtr(), bitmap.LargeEmpty)
-		wr.Set(uid)
 	}
+	ss.Maps[ix-1].Set(uid)
 	return ix
 }
 
+/*
 func (ss *SomeStrings) Stat() [9]int {
 	nsz, ncmp, ncnt := ss.Null.Bitmap.(*bitmap.Large).Stat()
 	nnsz, nncmp, nncnt := ss.NotNull.Bitmap.(*bitmap.Large).Stat()
@@ -258,6 +246,7 @@ func (ss *SomeStrings) Stat() [9]int {
 	}
 	return [9]int{nsz, ncmp, ncnt, nnsz, nncmp, nncnt, size, compact, count}
 }
+*/
 
 type Index interface {
 	Set(i int32)
@@ -265,33 +254,9 @@ type Index interface {
 	Iterator(m int32) bitmap.Iterator
 }
 
-func (ss *SomeStrings) GetIndex(ix uint32) Index {
+func (ss *SomeStrings) GetMap(ix uint32) bitmap.IMutBitmap {
 	if ix == 0 {
-		return ss.Null
+		return nil
 	}
-	if !ss.Huge {
-		return bitmap.Wrap(&BitmapAlloc, ss.GetHndl(ix).HndlAsPtr(), bitmap.LargeEmpty)
-	} else {
-		return &ss.HugeMaps[ix]
-	}
+	return ss.Maps[ix-1]
 }
-
-func (ss *SomeStrings) GetIter(ix uint32, max int32) bitmap.Iterator {
-	if ix == 0 {
-		return bitmap.EmptyIt
-	}
-	if !ss.Huge {
-		return bitmap.Wrap(&BitmapAlloc, ss.GetHndl(ix).HndlAsPtr(), bitmap.LargeEmpty).Iterator(max)
-	} else {
-		return ss.HugeMaps[ix].Iterator(max)
-	}
-}
-
-/*
-func (ss *SomeStrings) GetStr(ix uint32) string {
-	if ix == 0 {
-		return ""
-	}
-	return ss.OtherStrings[ix-1]
-}
-*/

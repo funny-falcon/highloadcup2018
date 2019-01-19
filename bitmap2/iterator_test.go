@@ -45,8 +45,7 @@ func TestIterator(t *testing.T) {
 			}
 		}
 		newIt := func(ds dumbSet) bitmap2.IBitmap {
-			var smptr bitmap2.SmallPtr
-			smset := bitmap2.Small{SmallPtr: &smptr}
+			smset := bitmap2.Small{}
 			for _, v := range ds {
 				smset.Set(v)
 			}

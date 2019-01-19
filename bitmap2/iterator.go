@@ -7,11 +7,39 @@ func LoopMap(bm IBitmap, f func(u []int32) bool) {
 	it, last := bm.Iterator()
 	for last >= 0 {
 		block, next := it.FetchAndNext(last)
+		if next >= last {
+			panic("no")
+		}
 		if !block.Empty() && !f(block.Unroll(last, &indx)) {
 			break
 		}
+		last = next
+	}
+}
+
+func CountMap(bm IBitmap) uint32 {
+	var sum uint32
+	it, last := bm.Iterator()
+	for last >= 0 {
+		block, next := it.FetchAndNext(last)
 		if next >= last {
 			panic("no")
+		}
+		sum += block.Count()
+		last = next
+	}
+	return sum
+}
+
+func LoopMapBlock(bm IBitmap, f func(block Block, span int32) bool) {
+	it, last := bm.Iterator()
+	for last >= 0 {
+		block, next := it.FetchAndNext(last)
+		if next >= last {
+			panic("no")
+		}
+		if !block.Empty() && !f(*block, last) {
+			break
 		}
 		last = next
 	}

@@ -54,6 +54,7 @@ func (b *Bitmap) Set(id int32) {
 			b.B[i] = BitmapSpan{Span: bigspan}
 			b.B[i].Set(id)
 			b.Size++
+			return
 		}
 	}
 	b.B = append(b.B, BitmapSpan{Span: bigspan})

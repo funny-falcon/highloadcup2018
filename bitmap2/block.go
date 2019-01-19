@@ -41,11 +41,7 @@ func (b *Block) Empty() bool {
 }
 
 func (b *Block) Count() uint32 {
-	sum := 0
-	for _, v := range b {
-		sum += bits.OnesCount64(v)
-	}
-	return uint32(sum)
+	return uint32(bits.OnesCount64(b[0]) + bits.OnesCount64(b[1]))
 }
 
 func (b *Block) Intersect(o *Block) {

@@ -2,27 +2,41 @@ package alloc2
 
 import (
 	"log"
+	"syscall"
 	"unsafe"
-
-	"golang.org/x/sys/unix"
 )
 
 const SlabSize = 1 << 24
-const ChunkSizeShift = 18
-const ChunkSize = 1 << 18
+const ChunkSizeShift = 16
+const ChunkSize = 1 << ChunkSizeShift
+const ChunkMask = ChunkSize - 1
+
+type Chunk [ChunkSize]byte
 
 type ChunkGen struct {
-	CurSlab []byte
+	CurSlab    []byte
+	TotalAlloc int
 }
 
 func (g *ChunkGen) Gen() (res *[ChunkSize]byte) {
 	if len(g.CurSlab) == 0 {
 		var err error
-		g.CurSlab, err = unix.Mmap(-1, 0, SlabSize, unix.PROT_READ|unix.PROT_WRITE,
-			unix.MAP_PRIVATE|unix.MAP_ANONYMOUS)
+		g.CurSlab, err = mmap(0x80000000, SlabSize, syscall.PROT_READ|syscall.PROT_WRITE,
+			syscall.MAP_PRIVATE|syscall.MAP_ANONYMOUS, -1, 0)
 		if err != nil {
 			log.Fatal(err)
 		}
+		k := uintptr(unsafe.Pointer(&g.CurSlab[0])) % ChunkSize
+		if k > 0 {
+			if err = munmap(g.CurSlab[: ChunkSize-k : ChunkSize-k]); err != nil {
+				log.Fatal(err)
+			}
+			if err = munmap(g.CurSlab[SlabSize-k:]); err != nil {
+				log.Fatal(err)
+			}
+			g.CurSlab = g.CurSlab[ChunkSize-k : SlabSize-k : SlabSize-k]
+		}
+		g.TotalAlloc += len(g.CurSlab)
 	}
 	*(*unsafe.Pointer)(unsafe.Pointer(&res)) = unsafe.Pointer(&g.CurSlab[0])
 	g.CurSlab = g.CurSlab[ChunkSize:]

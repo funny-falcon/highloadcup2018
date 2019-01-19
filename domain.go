@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/funny-falcon/highloadcup2018/bitmap"
+	bitmap "github.com/funny-falcon/highloadcup2018/bitmap2"
 
 	"github.com/funny-falcon/highloadcup2018/alloc"
 )
@@ -56,15 +56,16 @@ type Account struct {
 	PremiumStart  int32
 	Birth         int32
 	Joined        int32
-	Likes         alloc.Ptr
-	Interests     [4]uint32
+	Likes         uintptr
+	Interests     bitmap.Block
 }
 
 func (acc *Account) SetInterest(ix uint32) {
-	acc.Interests[ix/32] |= 1 << (ix & 31)
+	acc.Interests[ix/64] |= 1 << (ix & 63)
 }
 
-var Accounts []Account
+var Accounts = make([]Account, 1536*1024)
+var AccountsMap bitmap.Huge
 var MaxId int32
 
 func SureAccount(i int32) *Account {
@@ -79,6 +80,7 @@ func SureAccount(i int32) *Account {
 		copy(newAccs, Accounts)
 		Accounts = newAccs
 	}
+	AccountsMap.Set(i)
 	acc := &Accounts[i]
 	acc.Uid = int32(i)
 	return acc
@@ -123,8 +125,8 @@ var PremiumNow = bitmap.Huge{}
 var PremiumNull = bitmap.Huge{}
 var PremiumNotNull = bitmap.Huge{}
 
-var EmailGtIndexes [26]bitmap.Huge
-var EmailLtIndexes [26]bitmap.Huge
+var EmailGtIndexes [26]bitmap.Bitmap
+var EmailLtIndexes [26]bitmap.Bitmap
 
 func IndexGtLtEmail(e string, uid int32, set bool) {
 	ch := e[0]
@@ -154,25 +156,13 @@ func IndexGtLtEmail(e string, uid int32, set bool) {
 	}
 }
 
-var BirthYearIndexes = func() []*bitmap.Wrapper {
-	res := make([]*bitmap.Wrapper, 60)
-	for i := range res {
-		res[i] = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
-	}
-	return res
-}()
+var BirthYearIndexes [60]bitmap.Bitmap
 
 func GetBirthYear(ts int32) int32 {
 	return int32(time.Unix(int64(ts), 0).Year() - 1950)
 }
 
-var JoinYearIndexes = func() []*bitmap.Wrapper {
-	res := make([]*bitmap.Wrapper, 10)
-	for i := range res {
-		res[i] = bitmap.Wrap(&BitmapAlloc, nil, bitmap.LargeEmpty)
-	}
-	return res
-}()
+var JoinYearIndexes [10]bitmap.Bitmap
 
 func GetJoinYear(ts int32) int32 {
 	return int32(time.Unix(int64(ts), 0).Year() - 2011)
@@ -186,7 +176,9 @@ var SnameSorted SnameSorting
 var SnameOnce = NewOnce(SnameSorted.Init)
 var CityStrings SomeStrings
 var CountryStrings SomeStrings
-var InterestStrings = SomeStrings{Huge: true}
+
+//var InterestStrings = SomeStrings{Huge: true}
+var InterestStrings = SomeStrings{}
 
 func GetStatusIx(status string) (uint8, bool) {
 	switch status {
@@ -315,126 +307,30 @@ func (s *SnameSorting) PrefixRange(pref string) (i, j int) {
 	return
 }
 
-var Likers []alloc.Ptr
+var Likers = make([]uintptr, 1536*1024)
 
-var LikersAlloc alloc.Simple
-
-func SureLikers(i int32) *bitmap.Wrapper {
+func SureLikers(i int32) *bitmap.Likes {
 	if int(i) >= len(Likers) {
 		ln := int32(1)
 		for ; ln < i; ln *= 2 {
 		}
-		newLikers := make([]alloc.Ptr, ln, ln)
+		newLikers := make([]uintptr, ln, ln)
 		copy(newLikers, Likers)
 		Likers = newLikers
 	}
-	return bitmap.Wrap(&BitmapAlloc, &Likers[i], bitmap.SmallEmpty)
+	return bitmap.GetLikes(&Likers[i])
 }
 
-func GetLikers(i int32) *bitmap.Wrapper {
+func GetLikers(i int32) *bitmap.Likes {
 	if int(i) >= len(Likers) {
 		return nil
 	}
 	if Likers[i] == 0 {
 		return nil
 	}
-	return bitmap.Wrap(&BitmapAlloc, &Likers[i], bitmap.SmallEmpty)
-}
-
-type Likes struct {
-	Cnt   uint16
-	Cap   uint16
-	Likes [256]Like
+	return bitmap.GetLikes(&Likers[i])
 }
 
 const LikeUidShift = 8
 const LikeUidMask = (^int32(0)) << LikeUidShift
 const LikeCntMask = (1 << LikeUidShift) - 1
-
-type Like struct {
-	UidAndCnt int32
-	AvgTs     int32
-}
-
-var LikesAlloc alloc.Simple
-
-func (lks *Likes) Simplify() {
-	sort.Slice(lks.Likes[:lks.Cnt], func(i, j int) bool {
-		return lks.Likes[i].UidAndCnt < lks.Likes[j].UidAndCnt
-	})
-	j := 0
-	for i := 1; i < int(lks.Cnt); i++ {
-		if lks.Likes[i].UidAndCnt&LikeUidMask == lks.Likes[j].UidAndCnt&LikeUidMask {
-			lks.Likes[j].AddOne(lks.Likes[i].AvgTs)
-		} else {
-			j++
-			lks.Likes[j] = lks.Likes[i]
-		}
-	}
-	lks.Cnt = uint16(j)
-}
-
-func (lks *Likes) Alloc() alloc.Ptr {
-	cap := (lks.Cnt + 2) &^ 3
-	var alks *Likes
-	ptr := LikesAlloc.Alloc(4 + 8*int(cap))
-	LikesAlloc.Get(ptr, &alks)
-	alks.Cnt = lks.Cnt
-	alks.Cap = cap
-	copy(alks.Likes[:lks.Cnt], lks.Likes[:lks.Cnt])
-	return ptr
-}
-
-func (lks *Likes) Insert(old alloc.Ptr, uid int32, ts int32) alloc.Ptr {
-	uidShift := uid << LikeUidShift
-	i := sort.Search(int(lks.Cnt), func(i int) bool {
-		return uidShift <= lks.Likes[i].UidAndCnt
-	})
-	if i < int(lks.Cnt) && lks.Likes[i].UidAndCnt&LikeUidMask == uidShift {
-		lks.Likes[i].AddOne(ts)
-		return old
-	}
-	ptr := old
-	if lks.Cnt == lks.Cap {
-		ptr = lks.Alloc()
-		var nlks *Likes
-		LikesAlloc.Get(ptr, &nlks)
-		lks = nlks
-	}
-	copy(lks.Likes[i+1:], lks.Likes[i:lks.Cnt])
-	lks.Likes[i] = Like{UidAndCnt: uidShift, AvgTs: ts}
-	return ptr
-}
-
-func (lks *Likes) Similarity(oth *Likes) float64 {
-	i, j := 0, 0
-	la, lb := int(lks.Cnt), int(oth.Cnt)
-	sum := float64(0)
-	for i < la && j < lb {
-		lka := lks.Likes[i]
-		lkb := lks.Likes[j]
-		uida := lka.UidAndCnt & LikeUidMask
-		uidb := lkb.UidAndCnt & LikeUidMask
-		if uida == uidb {
-			tsdiff := int(lka.AvgTs) - int(lkb.AvgTs)
-			if tsdiff < 0 {
-				tsdiff = -tsdiff
-			} else if tsdiff == 0 {
-				tsdiff = 1
-			}
-			sum += 1.0 / float64(tsdiff)
-		} else if uida < uidb {
-			i++
-		} else {
-			j++
-		}
-	}
-	return sum
-}
-
-func (lk *Like) AddOne(othTs int32) {
-	oldCnt := uint64((lk.UidAndCnt & LikeCntMask) + 1)
-	tsSum := uint64(lk.AvgTs)*oldCnt + uint64(othTs)
-	lk.AvgTs = int32(tsSum / (oldCnt + 1))
-	lk.UidAndCnt++
-}

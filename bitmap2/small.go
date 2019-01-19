@@ -6,13 +6,9 @@ import (
 	"github.com/funny-falcon/highloadcup2018/alloc2"
 )
 
-var SmallAlloc = alloc2.Simple{}
+var SmallAlloc = alloc2.Simple{Log: ""}
 
 type Small struct {
-	*SmallPtr
-}
-
-type SmallPtr struct {
 	*SmallImpl
 }
 
@@ -22,8 +18,12 @@ type SmallImpl struct {
 	Data [256]int32
 }
 
-func GetSmall(p *uintptr) Small {
-	return Small{SmallPtr: (*SmallPtr)(unsafe.Pointer(p))}
+func GetSmall(p *uintptr) *Small {
+	return (*Small)(unsafe.Pointer(p))
+}
+
+func (s *Small) Uintptr() uintptr {
+	return uintptr(unsafe.Pointer(s.SmallImpl))
 }
 
 func (s *Small) GetSize() uint32 {
@@ -32,9 +32,10 @@ func (s *Small) GetSize() uint32 {
 
 func (s *Small) Set(id int32) {
 	if s.SmallImpl == nil {
-		s.SmallImpl = (*SmallImpl)(SmallAlloc.Alloc(16))
+		ncap := uint16(4)
+		s.SmallImpl = (*SmallImpl)(SmallAlloc.Alloc(4 + int(ncap)*4))
 		s.Size = 1
-		s.Cap = 3
+		s.Cap = ncap
 		s.Data[0] = id
 		return
 	}
@@ -43,11 +44,12 @@ func (s *Small) Set(id int32) {
 		return
 	}
 	if s.Size == s.Cap {
-		ncap := s.Cap*2 - 1
+		ncap := s.Cap * 2
 		newImpl := (*SmallImpl)(SmallAlloc.Alloc(int(ncap+1) * 4))
 		newImpl.Size = s.Size
 		newImpl.Cap = ncap
 		copy(newImpl.Data[:s.Size], s.Data[:s.Size])
+		SmallAlloc.Dealloc(unsafe.Pointer(s.SmallImpl))
 		s.SmallImpl = newImpl
 	}
 	copy(s.Data[ix+1:s.Size+1], s.Data[ix:s.Size])
