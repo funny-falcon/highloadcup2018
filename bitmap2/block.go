@@ -97,6 +97,42 @@ func unroll32(v uint32, sp int32, k int, r uintptr) int {
 	return k
 }
 
+func (b *Block) UnrollCount(r *BlockUnroll) {
+	p := uintptr(unsafe.Pointer(r))
+	unrollCount32(uint32(b[1]>>32), p+96*4)
+	unrollCount32(uint32(b[1]), p+64*4)
+	unrollCount32(uint32(b[0]>>32), p+32*4)
+	unrollCount32(uint32(b[0]), p)
+}
+
+func unrollCount32(v uint32, r uintptr) int {
+	k := 0
+	for ; v != 0; v >>= 4 {
+		switch v & 3 {
+		case 3:
+			*aref32(r, k+1)++
+			*aref32(r, k)++
+		case 2:
+			*aref32(r, k+1)++
+		case 1:
+			*aref32(r, k)++
+		case 0:
+		}
+		switch (v >> 2) & 3 {
+		case 3:
+			*aref32(r, k+3)++
+			*aref32(r, k+2)++
+		case 2:
+			*aref32(r, k+3)++
+		case 1:
+			*aref32(r, k+2)++
+		case 0:
+		}
+		k += 4
+	}
+	return k
+}
+
 //*/
 
 /*

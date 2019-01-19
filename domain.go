@@ -55,14 +55,16 @@ type Account struct {
 	Birth         int32
 	Joined        int32
 	Likes         uintptr
-	Interests     bitmap.Block
 }
 
+/*
 func (acc *Account) SetInterest(ix uint32) {
 	acc.Interests[ix/64] |= 1 << (ix & 63)
 }
+*/
 
 var Accounts = make([]Account, 1536*1024)
+var Interests = make([]bitmap.Block, 1536*1024)
 var AccountsMap bitmap.Huge
 var MaxId int32
 
@@ -77,11 +79,22 @@ func SureAccount(i int32) *Account {
 		newAccs := make([]Account, ln, ln)
 		copy(newAccs, Accounts)
 		Accounts = newAccs
+		newInterests := make([]bitmap.Block, ln, ln)
+		copy(newInterests, Interests)
+		Interests = newInterests
 	}
 	AccountsMap.Set(i)
 	acc := &Accounts[i]
 	acc.Uid = int32(i)
 	return acc
+}
+
+func SetInterest(i int32, ix int32) {
+	Interests[i].Set(ix)
+}
+
+func UnsetInterest(i int32, ix uint32) {
+
 }
 
 func HasAccount(i int32) *Account {

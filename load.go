@@ -177,7 +177,8 @@ func Load() {
 				}
 				for _, interest := range accin.Interests {
 					ix := InterestStrings.Add(interest, acc.Uid)
-					acc.SetInterest(ix)
+					SetInterest(acc.Uid, int32(ix-1))
+					//acc.SetInterest(ix - 1)
 				}
 				var likes bitmap.Small
 				for _, like := range accin.Likes {

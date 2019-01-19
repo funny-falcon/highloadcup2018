@@ -3,7 +3,7 @@ package bitmap2
 type IMutBitmap interface {
 	Set(id int32)
 	Unset(id int32)
-	IBitmap
+	IBitmapSizer
 }
 
 type IBitmap interface {
