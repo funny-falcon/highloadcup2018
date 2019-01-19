@@ -152,16 +152,16 @@ func IndexGtLtEmail(e string, uid int32, set bool) {
 	}
 }
 
-var BirthYearIndexes [60]bitmap.Bitmap
+var BirthYearIndexes [61]bitmap.Bitmap
 
 func GetBirthYear(ts int32) int32 {
-	return int32(time.Unix(int64(ts), 0).Year() - 1950)
+	return int32(time.Unix(int64(ts), 0).UTC().Year() - 1950)
 }
 
 var JoinYearIndexes [10]bitmap.Bitmap
 
 func GetJoinYear(ts int32) int32 {
-	return int32(time.Unix(int64(ts), 0).Year() - 2011)
+	return int32(time.Unix(int64(ts), 0).UTC().Year() - 2011)
 }
 
 var DomainsStrings = SomeStrings{Huge: true}
@@ -229,16 +229,17 @@ func GetEmailStart(s string) uint32 {
 func GetEmailPrefix(s string) uint32 {
 	l := len(s)
 	r := uint32(0)
-	if l >= 4 {
+	switch {
+	case l >= 4:
 		r = uint32(s[3])
-	}
-	if l == 3 {
+		fallthrough
+	case l >= 3:
 		r |= uint32(s[2]) << 8
-	}
-	if l == 2 {
+		fallthrough
+	case l >= 2:
 		r |= uint32(s[1]) << 16
-	}
-	if l == 1 {
+		fallthrough
+	case l >= 1:
 		r |= uint32(s[0]) << 24
 	}
 	return r

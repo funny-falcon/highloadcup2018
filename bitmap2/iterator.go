@@ -70,16 +70,17 @@ type AndBitmap struct {
 }
 
 func NewAndBitmap(bm []IBitmap) IBitmap {
-	sort.Slice(bm, func(i, j int) bool {
-		return SizeOf(bm[i]) < SizeOf(bm[j])
+	am := &AndBitmap{append([]IBitmap(nil), bm...)}
+	sort.Slice(am.B, func(i, j int) bool {
+		return SizeOf(am.B[i]) < SizeOf(am.B[j])
 	})
-	if SizeOf(bm[0]) == 0 {
+	if SizeOf(am.B[0]) == 0 {
 		return EmptyMap
 	}
 	if len(bm) == 1 {
-		return bm[0]
+		return am.B[0]
 	}
-	return &AndBitmap{bm}
+	return am
 }
 
 type AndIterator struct {

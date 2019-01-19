@@ -117,7 +117,7 @@ func (s *Simple) Compact(pptr *uintptr) {
 		sz := *(*uint32)(unsafe.Pointer(up - 4))
 		nptr := s.alloc(int(sz - 4))
 		optr := unsafe.Pointer(*pptr)
-		copy((*Chunk)(nptr)[:sz], (*Chunk)(optr)[:sz])
+		copy((*Chunk)(nptr)[:sz-4], (*Chunk)(optr)[:sz-4])
 		s.dealloc(optr)
 		*pptr = uintptr(nptr)
 	}

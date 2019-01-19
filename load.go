@@ -2,7 +2,9 @@ package main
 
 import (
 	"archive/zip"
+	"bufio"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"runtime"
@@ -58,6 +60,18 @@ func Compact() {
 }
 
 func Load() {
+	var outfile io.Writer
+	if *dumpload {
+		f, err := os.Create("load.dump")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer f.Close()
+		buf := bufio.NewWriterSize(f, 128*1024)
+		defer buf.Flush()
+		outfile = buf
+	}
+
 	optfile, err := os.Open(*path + "options.txt")
 	if err != nil {
 		log.Fatal(err)
@@ -90,6 +104,9 @@ func Load() {
 				iter.ReadVal(&accin)
 				if iter.Error != nil {
 					break
+				}
+				if outfile != nil {
+					fmt.Fprintf(outfile, "%+v\n", &accin)
 				}
 				var ok bool
 				acc := SureAccount(int32(accin.Id))
@@ -134,7 +151,7 @@ func Load() {
 				domain := DomainFromEmail(accin.Email)
 				acc.Domain = uint8(DomainsStrings.Add(domain, acc.Uid))
 				IndexGtLtEmail(accin.Email, acc.Uid, true)
-				acc.Phone, ok = EmailIndex.InsertUid(accin.Phone, acc.Uid)
+				acc.Phone, ok = PhoneIndex.InsertUid(accin.Phone, acc.Uid)
 				if accin.Phone != "" {
 					if !ok {
 						panic("phone is not unique " + accin.Phone)

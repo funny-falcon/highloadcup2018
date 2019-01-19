@@ -1,5 +1,7 @@
 package main
 
+import "sort"
+
 type counter struct {
 	u uint32
 	s float64
@@ -18,9 +20,17 @@ func SortGroupLimit(limit int, order int, gr []counter, less func(idi, idj uint3
 		limit = i
 	}
 	if order == 1 {
-		SortGroupLimitAsc(limit, gr, less)
+		sort.Slice(gr, func(i, j int) bool {
+			gi, gj := gr[i], gr[j]
+			return gi.s < gj.s || gi.s == gj.s && less(gi.u, gj.u)
+		})
+		//SortGroupLimitAsc(limit, gr, less)
 	} else {
-		SortGroupLimitDesc(limit, gr, less)
+		sort.Slice(gr, func(i, j int) bool {
+			gi, gj := gr[i], gr[j]
+			return gi.s > gj.s || gi.s == gj.s && !less(gi.u, gj.u)
+		})
+		//SortGroupLimitDesc(limit, gr, less)
 	}
 	if limit < len(gr) {
 		gr = gr[:limit]
@@ -90,7 +100,7 @@ func SortGroupLimitDesc(limit int, gr []counter, less func(idi, idj uint32) bool
 		}
 		for i := 1; i < l; i++ {
 			cur, j := gr[i], i-1
-			for ; j >= 0 && (cur.s > gr[j].s || cur.s == gr[j].s && !less(cur.u, gr[j].u)); j-- {
+			for ; j >= 0 && (cur.s > gr[j].s || cur.s == gr[j].s && less(gr[j].u, cur.u)); j-- {
 				gr[j+1] = gr[j]
 			}
 			gr[j+1] = cur
@@ -113,15 +123,15 @@ func SortGroupLimitDesc(limit int, gr []counter, less func(idi, idj uint32) bool
 	}
 	i := 0
 	for j, cur := range gr {
-		if cur.s > mid.s || cur.s == mid.s && !less(cur.u, mid.u) {
+		if cur.s > mid.s || cur.s == mid.s && less(mid.u, cur.u) {
 			gr[i], gr[j] = cur, gr[i]
 			i++
 		}
 	}
 	if limit > i {
-		SortGroupLimitAsc(i, gr[:i], less)
-		SortGroupLimitAsc(limit-i, gr[i:], less)
+		SortGroupLimitDesc(i, gr[:i], less)
+		SortGroupLimitDesc(limit-i, gr[i:], less)
 	} else {
-		SortGroupLimitAsc(limit, gr[:i], less)
+		SortGroupLimitDesc(limit, gr[:i], less)
 	}
 }

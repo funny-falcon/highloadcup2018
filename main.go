@@ -15,6 +15,7 @@ var path = flag.String("path", "/tmp/data/", "data path")
 var port = flag.String("port", "80", "port to listen")
 var onlyload = flag.Bool("onlyload", false, "only load")
 var memprofile = flag.String("memprofile", "", "memprofile")
+var dumpload = flag.Bool("dumpload", false, "dumpload")
 
 func main() {
 	log.SetFlags(log.Lmicroseconds | log.Lshortfile)
@@ -37,8 +38,15 @@ func main() {
 var GET = []byte("GET")
 
 func handler(ctx *fasthttp.RequestCtx) {
+	meth := ctx.Method()
+	path := ctx.Path()
+	logf("Method: %s Path: %s, args: %s", meth, path, ctx.QueryArgs())
 	switch {
 	case ctx.IsGet():
 		getHandler(ctx)
 	}
+}
+
+func logf(format string, args ...interface{}) {
+	//log.Printf(format, args...)
 }

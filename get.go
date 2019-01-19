@@ -44,10 +44,6 @@ type OutFields struct {
 var EmptyFilterRes = []byte(`{"accounts":[]}`)
 var EmptyGroupRes = []byte(`{"groups":[]}`)
 
-func logf(format string, args ...interface{}) {
-	//log.Printf(format, args...)
-}
-
 func doFilter(ctx *fasthttp.RequestCtx) {
 	args := ctx.QueryArgs()
 	maps := make([]bitmap.IBitmap, 0, 4)
@@ -126,7 +122,9 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 			}
 			email := sval
 			emaillt := GetEmailPrefix(email)
+			logf("emaillt %08x", emaillt)
 			filters = append(filters, func(acc *Account) bool {
+				logf("EmailStart %08x", acc.EmailStart)
 				return acc.EmailStart < emaillt
 			})
 			if len(email) > 4 {
@@ -353,7 +351,7 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 			}
 			birth := int32(n)
 			filters = append(filters, func(acc *Account) bool {
-				return acc.Birth > birth
+				return acc.Birth < birth
 			})
 			birthYear := GetBirthYear(birth)
 			if birthYear > 1988-1950 {
@@ -363,7 +361,7 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 			for ; birthYear >= 0; birthYear-- {
 				orIters = append(orIters, &BirthYearIndexes[birthYear])
 			}
-			maps = append(maps, bitmap.Materialize(bitmap.NewOrBitmap(orIters)))
+			maps = append(maps, bitmap.NewOrBitmap(orIters))
 		case "birth_year":
 			outFields.Birth = true
 			year, err := strconv.Atoi(sval)
@@ -372,11 +370,11 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 				correct = false
 				return
 			}
-			if year < 1950 || year-1950 > len(BirthYearIndexes) {
+			if year < 1950 || year-1950 >= len(BirthYearIndexes) {
 				emptyRes = true
 				return
 			}
-			maps = append(maps, &BirthYearIndexes[year])
+			maps = append(maps, &BirthYearIndexes[year-1950])
 		case "interests_contains", "interests_any":
 			interests := strings.Split(sval, ",")
 			iters := make([]bitmap.IBitmap, 0, len(interests))
@@ -691,10 +689,10 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 			correct = false
 		}
 	})
-	logf("groupBy %d iterators %#v", groupBy, iterators)
+	logf("groupBy %d iterators %#v limit %d order %d", groupBy, iterators, limit, order)
 
 	if !correct || limit < 0 || order == 0 {
-		logf("correct ", correct, " limit ", limit, " order ", order)
+		logf("correct %v", correct)
 		ctx.SetStatusCode(400)
 		return
 	} else if emptyRes {
@@ -840,7 +838,7 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 		mapper := func(u []int32) bool {
 			for _, uid := range u {
 				k := 0
-				acc := Accounts[uid]
+				acc := &Accounts[uid]
 				if groupBy&GroupByCity != 0 {
 					k = int(acc.City) * cityMult
 				} else if groupBy&GroupByCountry != 0 {
@@ -854,6 +852,13 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 					k += int(acc.Status) - 1
 				}
 				groups[k].s++
+
+				/*
+					cityi := CountryStrings.GetStr(uint32(acc.Country))
+					if cityi == "Росмаль" {
+						logf("city %s status %s", cityi, GetStatus(acc.Status))
+					}
+				*/
 			}
 			return true
 		}
@@ -878,6 +883,8 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 				bitmap.NewAndBitmap(append(iterators, &MeetingMap))))
 			groups[StatusComplexIx-1].s = float64(bitmap.CountMap(
 				bitmap.NewAndBitmap(append(iterators, &ComplexMap))))
+			logf("ComplexMap size %d %v", ComplexMap.Size, groups[StatusComplexIx-1])
+			logf("Status counts: %v", groups[:3])
 		}
 		groups = SortGroupLimit(limit, order, groups, func(idi, idj uint32) bool {
 			var cityi string
@@ -889,6 +896,7 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 				cityi = CountryStrings.GetStr(idi >> 8)
 				cityj = CountryStrings.GetStr(idj >> 8)
 			}
+			//logf("cityi %s cityj %s", cityi, cityj)
 			if cityi < cityj {
 				return true
 			} else if cityi > cityj {
