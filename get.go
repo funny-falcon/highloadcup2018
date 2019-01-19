@@ -1071,9 +1071,12 @@ func doSuggest(ctx *fasthttp.RequestCtx, iid int) {
 		}
 	}
 
-	groups := SortGroupLimit(len(hsh), -1, hsh, func(idi, idj uint32) bool {
-		return idi > idj
-	})
+	/*
+		groups := SortGroupLimit(len(hsh), -1, hsh, func(idi, idj uint32) bool {
+			return idi > idj
+		})
+	*/
+	groups := Heapify(hsh)
 	logf("groups %v", groups)
 
 	uidHash := newUidHash(limit + int(small.Size))
@@ -1083,7 +1086,8 @@ func doSuggest(ctx *fasthttp.RequestCtx, iid int) {
 	logf("uidHash %v", uidHash)
 	uids := make([]int32, 0, limit)
 Outter:
-	for _, cnt := range groups {
+	for len(groups) > 0 {
+		cnt := groups[0]
 		osmall := bitmap.GetSmall(&Accounts[cnt.u].Likes)
 		logf("osmall %d %v", osmall.Size, osmall.Data[:osmall.Size])
 		for _, oid := range osmall.Data[:osmall.Size] {
@@ -1101,6 +1105,7 @@ Outter:
 				break Outter
 			}
 		}
+		groups = CntPop(groups)
 	}
 	logf("uids len %d", len(uids))
 
