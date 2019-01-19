@@ -8,8 +8,6 @@ import (
 	"time"
 
 	bitmap "github.com/funny-falcon/highloadcup2018/bitmap2"
-
-	"github.com/funny-falcon/highloadcup2018/alloc"
 )
 
 const (
@@ -109,8 +107,6 @@ func CodeFromPhone(p string) string {
 
 var EmailIndex UniqStrings
 var PhoneIndex UniqStrings
-
-var BitmapAlloc alloc.Simple
 
 var MaleMap = bitmap.Huge{}
 var FemaleMap = bitmap.Huge{}
