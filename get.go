@@ -1017,10 +1017,12 @@ func doSuggest(ctx *fasthttp.RequestCtx, iid int) {
 		return
 	}
 
-	sameSex := &MaleMap
-	if !acc.Sex {
-		sameSex = &FemaleMap
-	}
+	/*
+		sameSex := &MaleMap
+		if !acc.Sex {
+			sameSex = &FemaleMap
+		}
+	*/
 
 	small := bitmap.GetSmall(&acc.Likes)
 	if small.SmallImpl == nil {
@@ -1047,10 +1049,12 @@ func doSuggest(ctx *fasthttp.RequestCtx, iid int) {
 		}
 		for _, ucnt := range likers.Data[:likers.Size] {
 			oid := ucnt.UidAndCnt >> 8
-			if !sameSex.Has(oid) {
-				panic("no")
-				continue
-			}
+			/*
+				if !sameSex.Has(oid) {
+					panic("no")
+					continue
+				}
+			*/
 			if filter != nil && !filter(oid) {
 				continue
 			}
@@ -1084,9 +1088,11 @@ Outter:
 		logf("osmall %d %v", osmall.Size, osmall.Data[:osmall.Size])
 		for _, oid := range osmall.Data[:osmall.Size] {
 			//logf("osmall oid %d", oid)
-			if sameSex.Has(oid) {
-				panic("no")
-			}
+			/*
+				if sameSex.Has(oid) {
+					panic("no")
+				}
+			*/
 			if oid == id || !uidHash.Insert(oid) {
 				continue
 			}

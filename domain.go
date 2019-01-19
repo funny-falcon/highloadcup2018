@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -63,10 +64,20 @@ func (acc *Account) SetInterest(ix uint32) {
 }
 */
 
-var Accounts = make([]Account, 1536*1024)
-var Interests = make([]bitmap.Block, 1536*1024)
+const Init = 1536 * 1024
+
+var Accounts = make([]Account, Init)
+var Interests = make([]bitmap.Block, Init)
 var AccountsMap bitmap.Huge
 var MaxId int32
+
+func SureCapa(slicePtr interface{}, capa int) {
+	val := reflect.ValueOf(slicePtr)
+	tpe := reflect.TypeOf(slicePtr).Elem()
+	newVal := reflect.MakeSlice(tpe, capa, capa)
+	reflect.Copy(newVal, val.Elem())
+	val.Set(newVal)
+}
 
 func SureAccount(i int32) *Account {
 	if int(i) >= len(Accounts) {
@@ -76,12 +87,8 @@ func SureAccount(i int32) *Account {
 		if ln-ln/4 > i {
 			ln -= ln / 4
 		}
-		newAccs := make([]Account, ln, ln)
-		copy(newAccs, Accounts)
-		Accounts = newAccs
-		newInterests := make([]bitmap.Block, ln, ln)
-		copy(newInterests, Interests)
-		Interests = newInterests
+		SureCapa(&Accounts, int(ln))
+		SureCapa(&Interests, int(ln))
 	}
 	AccountsMap.Set(i)
 	acc := &Accounts[i]
