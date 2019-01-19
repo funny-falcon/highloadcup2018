@@ -8,7 +8,7 @@ import (
 
 	jsoniter "github.com/json-iterator/go"
 
-	"github.com/funny-falcon/highloadcup2018/bitmap"
+	bitmap "github.com/funny-falcon/highloadcup2018/bitmap2"
 
 	"github.com/valyala/fasthttp"
 )
@@ -50,7 +50,7 @@ func logf(format string, args ...interface{}) {
 
 func doFilter(ctx *fasthttp.RequestCtx) {
 	args := ctx.QueryArgs()
-	iterators := make([]bitmap.Iterator, 0, 4)
+	maps := make([]bitmap.IBitmap, 0, 4)
 	filters := []func(*Account) bool{}
 
 	correct := true
@@ -81,9 +81,9 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 			outFields.Sex = true
 			switch sval {
 			case "m":
-				iterators = append(iterators, MaleMap.Iterator(MaxId))
+				maps = append(maps, &MaleMap)
 			case "f":
-				iterators = append(iterators, FemaleMap.Iterator(MaxId))
+				maps = append(maps, &FemaleMap)
 			default:
 				logf("sex_eq incorrect")
 				correct = false
@@ -95,8 +95,8 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 				emptyRes = true
 				return
 			}
-			iterator := DomainsStrings.GetIter(ix, MaxId)
-			iterators = append(iterators, iterator)
+			iterator := DomainsStrings.GetMap(ix)
+			maps = append(maps, iterator)
 		case "email_gt":
 			if len(val) == 0 {
 				return // all are greater
@@ -118,7 +118,7 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 			} else if chix > 25 {
 				chix = 25
 			}
-			iterators = append(iterators, EmailGtIndexes[chix].Iterator(MaxId))
+			maps = append(maps, &EmailGtIndexes[chix])
 		case "email_lt":
 			if len(val) == 0 {
 				emptyRes = true
@@ -141,16 +141,16 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 			} else if chix > 25 {
 				return
 			}
-			iterators = append(iterators, EmailLtIndexes[chix].Iterator(MaxId))
+			maps = append(maps, &EmailLtIndexes[chix])
 		case "status_eq":
 			outFields.Status = true
 			switch sval {
 			case StatusFree:
-				iterators = append(iterators, FreeMap.Iterator(MaxId))
+				maps = append(maps, &FreeMap)
 			case StatusMeeting:
-				iterators = append(iterators, MeetingMap.Iterator(MaxId))
+				maps = append(maps, &MeetingMap)
 			case StatusComplex:
-				iterators = append(iterators, ComplexMap.Iterator(MaxId))
+				maps = append(maps, &ComplexMap)
 			default:
 				logf("status_eq incorrect")
 				correct = false
@@ -160,11 +160,11 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 			outFields.Status = true
 			switch sval {
 			case StatusFree:
-				iterators = append(iterators, MeetingOrComplexMap.Iterator(MaxId))
+				maps = append(maps, &MeetingOrComplexMap)
 			case StatusMeeting:
-				iterators = append(iterators, FreeOrComplexMap.Iterator(MaxId))
+				maps = append(maps, &FreeOrComplexMap)
 			case StatusComplex:
-				iterators = append(iterators, FreeOrMeetingMap.Iterator(MaxId))
+				maps = append(maps, &FreeOrMeetingMap)
 			default:
 				logf("status_neq incorrect")
 				correct = false
@@ -177,32 +177,35 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 				emptyRes = true
 				return
 			}
-			iterators = append(iterators, FnameStrings.GetIter(ix, MaxId))
+			maps = append(maps, FnameStrings.GetMap(ix))
 		case "fname_any":
 			outFields.Fname = true
 			names := strings.Split(sval, ",")
-			orIters := make([]bitmap.Iterator, 0, len(names))
+			orIters := make([]bitmap.IBitmap, 0, len(names))
 			for _, name := range names {
 				ix := FnameStrings.Find(name)
 				if ix == 0 {
 					continue
 				}
-				orIters = append(orIters, FnameStrings.GetIter(ix, MaxId))
+				orIters = append(orIters, FnameStrings.GetMap(ix))
 			}
 			if len(orIters) == 0 {
 				emptyRes = true
 				return
 			}
-			iterators = append(iterators, bitmap.NewOrIterator(orIters))
+			maps = append(maps, bitmap.NewOrBitmap(orIters))
 		case "fname_null":
 			outFields.Fname = true
 			switch sval {
 			case "1":
-				iterators = append(iterators, FnameStrings.Null.GetIterator(MaxId))
+				maps = append(maps, &FnameStrings.Null)
 			case "0":
-				filters = append(filters, func(acc *Account) bool {
-					return acc.Fname != 0
-				})
+				maps = append(maps, &FnameStrings.NotNull)
+				/*
+					filters = append(filters, func(acc *Account) bool {
+						return acc.Fname != 0
+					})
+				*/
 			default:
 				logf("fname_null incorrect")
 				correct = false
@@ -214,7 +217,7 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 				emptyRes = true
 				return
 			}
-			iterators = append(iterators, SnameStrings.GetIter(ix, MaxId))
+			maps = append(maps, SnameStrings.GetMap(ix))
 		case "sname_starts":
 			outFields.Sname = true
 			SnameOnce.Sure()
@@ -224,20 +227,23 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 				emptyRes = true
 				return
 			}
-			orIters := make([]bitmap.Iterator, j-i)
+			orIters := make([]bitmap.IBitmap, j-i)
 			for k := i; k < j; k++ {
-				orIters[k-i] = SnameStrings.GetIter(SnameSorted.Ix[k], MaxId)
+				orIters[k-i] = SnameStrings.GetMap(SnameSorted.Ix[k])
 			}
-			iterators = append(iterators, bitmap.NewOrIterator(orIters))
+			maps = append(maps, bitmap.NewOrBitmap(orIters))
 		case "sname_null":
 			outFields.Sname = true
 			switch sval {
 			case "1":
-				iterators = append(iterators, SnameStrings.Null.GetIterator(MaxId))
+				maps = append(maps, &SnameStrings.Null)
 			case "0":
-				filters = append(filters, func(acc *Account) bool {
-					return acc.Sname != 0
-				})
+				maps = append(maps, &SnameStrings.NotNull)
+				/*
+					filters = append(filters, func(acc *Account) bool {
+						return acc.Sname != 0
+					})
+				*/
 			default:
 				logf("sname_null incorrect")
 				correct = false
@@ -250,14 +256,14 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 				emptyRes = true
 				return
 			}
-			iterators = append(iterators, PhoneCodesStrings.GetIter(ix, MaxId))
+			maps = append(maps, PhoneCodesStrings.GetMap(ix))
 		case "phone_null":
 			outFields.Phone = true
 			switch sval {
 			case "1":
-				iterators = append(iterators, PhoneIndex.Null.GetIterator(MaxId))
+				maps = append(maps, &PhoneIndex.Null)
 			case "0":
-				iterators = append(iterators, PhoneIndex.NotNull.GetIterator(MaxId))
+				maps = append(maps, &PhoneIndex.NotNull)
 			default:
 				logf("phone_null incorrect")
 				correct = false
@@ -269,14 +275,14 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 				emptyRes = true
 				return
 			}
-			iterators = append(iterators, CountryStrings.GetIter(ix, MaxId))
+			maps = append(maps, CountryStrings.GetMap(ix))
 		case "country_null":
 			outFields.Country = true
 			switch sval {
 			case "1":
-				iterators = append(iterators, CountryStrings.Null.GetIterator(MaxId))
+				maps = append(maps, &CountryStrings.Null)
 			case "0":
-				iterators = append(iterators, CountryStrings.NotNull.GetIterator(MaxId))
+				maps = append(maps, &CountryStrings.NotNull)
 			default:
 				logf("country_null incorrect")
 				correct = false
@@ -288,30 +294,30 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 				emptyRes = true
 				return
 			}
-			iterators = append(iterators, CityStrings.GetIter(ix, MaxId))
+			maps = append(maps, CityStrings.GetMap(ix))
 		case "city_any":
 			outFields.City = true
 			cities := strings.Split(sval, ",")
-			orIters := make([]bitmap.Iterator, 0, len(cities))
+			orIters := make([]bitmap.IBitmap, 0, len(cities))
 			for _, name := range cities {
 				ix := CityStrings.Find(name)
 				if ix == 0 {
 					continue
 				}
-				orIters = append(orIters, CityStrings.GetIter(ix, MaxId))
+				orIters = append(orIters, CityStrings.GetMap(ix))
 			}
 			if len(orIters) == 0 {
 				emptyRes = true
 				return
 			}
-			iterators = append(iterators, bitmap.NewOrIterator(orIters))
+			maps = append(maps, bitmap.NewOrBitmap(orIters))
 		case "city_null":
 			outFields.City = true
 			switch sval {
 			case "1":
-				iterators = append(iterators, CityStrings.Null.GetIterator(MaxId))
+				maps = append(maps, &CityStrings.Null)
 			case "0":
-				iterators = append(iterators, CityStrings.NotNull.GetIterator(MaxId))
+				maps = append(maps, &CityStrings.NotNull)
 			default:
 				logf("city_null incorrect")
 				correct = false
@@ -332,11 +338,11 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 			if birthYear < 1995-1950 {
 				return
 			}
-			orIters := make([]bitmap.Iterator, 0, len(BirthYearIndexes)-int(birthYear)+1)
+			orIters := make([]bitmap.IBitmap, 0, len(BirthYearIndexes)-int(birthYear)+1)
 			for ; int(birthYear) < len(BirthYearIndexes); birthYear++ {
-				orIters = append(orIters, BirthYearIndexes[birthYear].Iterator(MaxId))
+				orIters = append(orIters, &BirthYearIndexes[birthYear])
 			}
-			iterators = append(iterators, bitmap.NewOrIterator(orIters))
+			maps = append(maps, bitmap.NewOrBitmap(orIters))
 		case "birth_lt":
 			outFields.Birth = true
 			n, err := strconv.Atoi(sval)
@@ -353,11 +359,11 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 			if birthYear > 1988-1950 {
 				return
 			}
-			orIters := make([]bitmap.Iterator, 0, birthYear+1)
+			orIters := make([]bitmap.IBitmap, 0, birthYear+1)
 			for ; birthYear >= 0; birthYear-- {
-				orIters = append(orIters, BirthYearIndexes[birthYear].Iterator(MaxId))
+				orIters = append(orIters, &BirthYearIndexes[birthYear])
 			}
-			iterators = append(iterators, bitmap.Materialize(bitmap.NewOrIterator(orIters)))
+			maps = append(maps, bitmap.Materialize(bitmap.NewOrBitmap(orIters)))
 		case "birth_year":
 			outFields.Birth = true
 			year, err := strconv.Atoi(sval)
@@ -370,10 +376,10 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 				emptyRes = true
 				return
 			}
-			iterators = append(iterators, BirthYearIndexes[year].Iterator(MaxId))
+			maps = append(maps, &BirthYearIndexes[year])
 		case "interests_contains", "interests_any":
 			interests := strings.Split(sval, ",")
-			iters := make([]bitmap.Iterator, 0, len(interests))
+			iters := make([]bitmap.IBitmap, 0, len(interests))
 			for _, interest := range interests {
 				ix := InterestStrings.Find(interest)
 				if ix == 0 {
@@ -383,7 +389,7 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 					}
 					continue
 				}
-				iters = append(iters, InterestStrings.GetIter(ix, MaxId))
+				iters = append(iters, InterestStrings.GetMap(ix))
 			}
 			if len(iters) == 0 {
 				if skey == "interests_any" {
@@ -392,9 +398,9 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 				return
 			}
 			if skey == "interests_any" {
-				iterators = append(iterators, bitmap.NewOrIterator(iters))
+				maps = append(maps, bitmap.NewOrBitmap(iters))
 			} else {
-				iterators = append(iterators, iters...)
+				maps = append(maps, iters...)
 			}
 		case "likes_contains":
 			likesStrs := bytes.Split(val, []byte(","))
@@ -410,18 +416,18 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 					emptyRes = true
 					return
 				}
-				iterators = append(iterators, w.Iterator(MaxId))
+				maps = append(maps, w)
 			}
 		case "premium_now":
 			outFields.Premium = true
-			iterators = append(iterators, PremiumNow.Iterator(MaxId))
+			maps = append(maps, &PremiumNow)
 		case "premium_null":
 			outFields.Premium = true
 			switch sval {
 			case "1":
-				iterators = append(iterators, PremiumNull.Iterator(MaxId))
+				maps = append(maps, &PremiumNull)
 			case "0":
-				iterators = append(iterators, PremiumNotNull.Iterator(MaxId))
+				maps = append(maps, &PremiumNotNull)
 			default:
 				logf("premium_null incorrect")
 				correct = false
@@ -444,18 +450,18 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	logf("Iterator %#v, filters %#v", iterators, filters)
+	logf("Iterator %#v, filters %#v", maps, filters)
 
-	iterator := bitmap.NewAllIterator(MaxId)
-	if len(iterators) > 0 {
-		iterator = bitmap.NewAndIterator(iterators)
-		iterators = nil
+	iterator := bitmap.IBitmap(&AccountsMap)
+	if len(maps) > 0 {
+		iterator = bitmap.NewAndBitmap(maps)
+		maps = nil
 	}
 	filter := combineFilters(filters)
 
 	resAccs := make([]*Account, 0, limit)
 	if filter == nil {
-		bitmap.LoopIter(iterator, func(uids []int32) bool {
+		bitmap.LoopMap(iterator, func(uids []int32) bool {
 			for _, uid := range uids {
 				resAccs = append(resAccs, &Accounts[uid])
 				if len(resAccs) == limit {
@@ -465,7 +471,7 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 			return true
 		})
 	} else {
-		bitmap.LoopIter(iterator, func(uids []int32) bool {
+		bitmap.LoopMap(iterator, func(uids []int32) bool {
 			for _, uid := range uids {
 				acc := &Accounts[uid]
 				if !filter(acc) {
@@ -519,7 +525,7 @@ type GroupBy struct {
 func doGroup(ctx *fasthttp.RequestCtx) {
 	args := ctx.QueryArgs()
 	logf("doGroup")
-	iterators := make([]bitmap.Iterator, 0, 4)
+	iterators := make([]bitmap.IBitmap, 0, 4)
 	groupBy := uint32(0)
 
 	correct := true
@@ -594,9 +600,9 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 		case "sex":
 			switch sval {
 			case "m":
-				iterators = append(iterators, MaleMap.Iterator(MaxId))
+				iterators = append(iterators, &MaleMap)
 			case "f":
-				iterators = append(iterators, FemaleMap.Iterator(MaxId))
+				iterators = append(iterators, &FemaleMap)
 			default:
 				logf("sex_eq incorrect")
 				correct = false
@@ -604,11 +610,11 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 		case "status":
 			switch sval {
 			case StatusFree:
-				iterators = append(iterators, FreeMap.Iterator(MaxId))
+				iterators = append(iterators, &FreeMap)
 			case StatusMeeting:
-				iterators = append(iterators, MeetingMap.Iterator(MaxId))
+				iterators = append(iterators, &MeetingMap)
 			case StatusComplex:
-				iterators = append(iterators, ComplexMap.Iterator(MaxId))
+				iterators = append(iterators, &ComplexMap)
 			default:
 				logf("status_eq incorrect")
 				correct = false
@@ -621,7 +627,7 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 				emptyRes = true
 				return
 			}
-			iterators = append(iterators, CountryStrings.GetIter(ix, MaxId))
+			iterators = append(iterators, CountryStrings.GetMap(ix))
 		case "city":
 			ix := CityStrings.Find(sval)
 			if ix == 0 {
@@ -629,7 +635,7 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 				emptyRes = true
 				return
 			}
-			iterators = append(iterators, CityStrings.GetIter(ix, MaxId))
+			iterators = append(iterators, CityStrings.GetMap(ix))
 		case "birth":
 			year, err := strconv.Atoi(sval)
 			if err != nil {
@@ -642,7 +648,7 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 				emptyRes = true
 				return
 			}
-			iterators = append(iterators, BirthYearIndexes[year-1950].Iterator(MaxId))
+			iterators = append(iterators, &BirthYearIndexes[year-1950])
 		case "joined":
 			year, err := strconv.Atoi(sval)
 			if err != nil {
@@ -655,7 +661,7 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 				emptyRes = true
 				return
 			}
-			iterators = append(iterators, JoinYearIndexes[year-2011].Iterator(MaxId))
+			iterators = append(iterators, &JoinYearIndexes[year-2011])
 		case "interests":
 			ix := InterestStrings.Find(sval)
 			if ix == 0 {
@@ -663,7 +669,7 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 				emptyRes = true
 				return
 			}
-			iterators = append(iterators, InterestStrings.GetIter(ix, MaxId))
+			iterators = append(iterators, InterestStrings.GetMap(ix))
 		case "likes":
 			n, err := strconv.Atoi(sval)
 			if err != nil || n <= 0 || n >= int(MaxId) {
@@ -677,7 +683,7 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 				emptyRes = true
 				return
 			}
-			iterators = append(iterators, w.Iterator(MaxId))
+			iterators = append(iterators, w)
 		case "query_id":
 			// ignore
 		default:
@@ -706,23 +712,27 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 	var groups []counter
 	switch {
 	case groupBy == GroupByInterests:
-		iterator := bitmap.NewAllIterator(MaxId)
+		var iterator bitmap.IBitmap
 		switch len(iterators) {
 		case 0:
-		case 1:
-			iterator = iterators[0]
+			iterator = &InterestStrings.NotNull
 		default:
-			iterator = bitmap.Materialize(bitmap.NewAndIterator(iterators))
+			iterators = append(iterators, &InterestStrings.NotNull)
+			iterator = bitmap.Materialize(bitmap.NewAndBitmap(iterators))
 		}
 		groups = make([]counter, len(InterestStrings.Arr))
 		for i := range InterestStrings.Arr {
 			groups[i] = counter{u: uint32(i + 1)}
 		}
-		bitmap.LoopIterBlock(iterator, func(bl bitmap.Block, span int32) bool {
-			for i, m := range InterestStrings.HugeMaps {
-				var block bitmap.Block
-				block, _ = m.FetchAndNext(span)
-				block.Intersect(bl)
+		intIters := make([]bitmap.Iterator, len(InterestStrings.Maps))
+		for i, m := range InterestStrings.Maps {
+			intIters[i], _ = m.Iterator()
+		}
+		bitmap.LoopMapBlock(iterator, func(bl bitmap.Block, span int32) bool {
+			for i, m := range intIters {
+				pbl, _ := m.FetchAndNext(span)
+				block := *pbl
+				block.Intersect(&bl)
 				groups[i].s += float64(block.Count())
 			}
 			return true
@@ -744,10 +754,10 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 		}
 	/*
 		case groupBy == GroupBySex:
-			iterators = append(iterators, MaleMap.Iterator(MaxId))
-			maleCount := bitmap.CountIter(bitmap.NewAndIterator(iterators))
-			iterators[len(iterators)-1] = FemaleMap.Iterator(MaxId)
-			femaleCount := bitmap.CountIter(bitmap.NewAndIterator(iterators))
+			iterators = append(iterators, MaleMap)
+			maleCount := bitmap.CountIter(bitmap.NewAndBitmap(iterators))
+			iterators[len(iterators)-1] = FemaleMap
+			femaleCount := bitmap.CountIter(bitmap.NewAndBitmap(iterators))
 			if order == 1 && femaleCount <= maleCount || order == -1 && femaleCount > maleCount {
 				stream.Write([]byte(`{"sex":"f","count":`))
 				stream.WriteUint32(femaleCount)
@@ -765,12 +775,12 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 			}
 			stream.WriteObjectEnd()
 		case groupBy == GroupByStatus:
-			iterators = append(iterators, FreeMap.Iterator(MaxId))
-			freeCount := bitmap.CountIter(bitmap.NewAndIterator(iterators))
-			iterators[len(iterators)-1] = MeetingMap.Iterator(MaxId)
-			meetingCount := bitmap.CountIter(bitmap.NewAndIterator(iterators))
-			iterators[len(iterators)-1] = ComplexMap.Iterator(MaxId)
-			complexCount := bitmap.CountIter(bitmap.NewAndIterator(iterators))
+			iterators = append(iterators, FreeMap)
+			freeCount := bitmap.CountIter(bitmap.NewAndBitmap(iterators))
+			iterators[len(iterators)-1] = MeetingMap
+			meetingCount := bitmap.CountIter(bitmap.NewAndBitmap(iterators))
+			iterators[len(iterators)-1] = ComplexMap
+			complexCount := bitmap.CountIter(bitmap.NewAndBitmap(iterators))
 			groups = []counter{
 				{StatusFreeIx, float64(freeCount)},
 				{StatusMeetingIx, float64(meetingCount)},
@@ -805,16 +815,16 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 		}
 		var ngroups int
 		var ncity int
-		var nullIt bitmap.Iterator
-		var notNullIt bitmap.Iterator
+		var nullIt bitmap.IBitmap
+		var notNullIt bitmap.IBitmap
 		if groupBy&GroupByCity != 0 {
 			ncity = len(CityStrings.Arr) + 1
-			nullIt = CityStrings.Null.GetIterator(MaxId)
-			notNullIt = CityStrings.NotNull.GetIterator(MaxId)
+			nullIt = &CityStrings.Null
+			notNullIt = &CityStrings.NotNull
 		} else if groupBy&GroupByCountry != 0 {
 			ncity = len(CountryStrings.Arr) + 1
-			nullIt = CountryStrings.Null.GetIterator(MaxId)
-			notNullIt = CountryStrings.NotNull.GetIterator(MaxId)
+			nullIt = &CountryStrings.Null
+			notNullIt = &CountryStrings.NotNull
 		} else {
 			ncity = 1
 		}
@@ -848,26 +858,26 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 			return true
 		}
 		if groupBy&(GroupByCity|GroupByCountry) != 0 {
-			bitmap.LoopIter(bitmap.NewAndIterator(append(iterators, notNullIt)), mapper)
+			bitmap.LoopMap(bitmap.NewAndBitmap(append(iterators, notNullIt)), mapper)
 		}
 		if nullIt != nil {
 			iterators = append(iterators, nullIt)
 		}
 		switch cityMult {
 		case 1:
-			groups[0].s = float64(bitmap.CountIter(bitmap.NewAndIterator(iterators)))
+			groups[0].s = float64(bitmap.CountMap(bitmap.NewAndBitmap(iterators)))
 		case 2:
-			groups[0].s = float64(bitmap.CountIter(
-				bitmap.NewAndIterator(append(iterators, FemaleMap.Iterator(MaxId)))))
-			groups[1].s = float64(bitmap.CountIter(
-				bitmap.NewAndIterator(append(iterators, MaleMap.Iterator(MaxId)))))
+			groups[0].s = float64(bitmap.CountMap(
+				bitmap.NewAndBitmap(append(iterators, &FemaleMap))))
+			groups[1].s = float64(bitmap.CountMap(
+				bitmap.NewAndBitmap(append(iterators, &MaleMap))))
 		case 3:
-			groups[StatusFreeIx-1].s = float64(bitmap.CountIter(
-				bitmap.NewAndIterator(append(iterators, FreeMap.Iterator(MaxId)))))
-			groups[StatusMeetingIx-1].s = float64(bitmap.CountIter(
-				bitmap.NewAndIterator(append(iterators, MeetingMap.Iterator(MaxId)))))
-			groups[StatusComplexIx-1].s = float64(bitmap.CountIter(
-				bitmap.NewAndIterator(append(iterators, ComplexMap.Iterator(MaxId)))))
+			groups[StatusFreeIx-1].s = float64(bitmap.CountMap(
+				bitmap.NewAndBitmap(append(iterators, &FreeMap))))
+			groups[StatusMeetingIx-1].s = float64(bitmap.CountMap(
+				bitmap.NewAndBitmap(append(iterators, &MeetingMap))))
+			groups[StatusComplexIx-1].s = float64(bitmap.CountMap(
+				bitmap.NewAndBitmap(append(iterators, &ComplexMap))))
 		}
 		groups = SortGroupLimit(limit, order, groups, func(idi, idj uint32) bool {
 			var cityi string

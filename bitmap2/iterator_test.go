@@ -1,4 +1,4 @@
-package bitmap_test
+package bitmap2_test
 
 import (
 	"math/rand"
@@ -6,27 +6,24 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/funny-falcon/highloadcup2018/bitmap2"
+
 	"github.com/stretchr/testify/require"
-
-	"github.com/funny-falcon/highloadcup2018/alloc"
-
-	"github.com/funny-falcon/highloadcup2018/bitmap"
 )
 
 func TestIterator(t *testing.T) {
 	for rrr := 99; rrr < 102; rrr++ {
 		rnd := rand.New(rand.NewSource(int64(rrr)))
-		var al alloc.Simple
-		newIts := []func(ds dumbSet) bitmap.Iterator{
-			func(ds dumbSet) bitmap.Iterator {
-				return ds.Iterator()
+		newIts := []func(ds dumbSet) bitmap2.IBitmap{
+			func(ds dumbSet) bitmap2.IBitmap {
+				return ds.Bitmap()
 			},
-			func(ds dumbSet) bitmap.Iterator {
-				smset := bitmap.Wrap(&al, nil, bitmap.LargeEmpty)
+			func(ds dumbSet) bitmap2.IBitmap {
+				bm := bitmap2.Bitmap{}
 				for _, v := range ds {
-					smset.Set(v)
+					bm.Set(v)
 				}
-				return smset.Iterator(1 << 20)
+				return &bm
 			},
 		}
 		for itk := 2; itk < 6; itk++ {
@@ -47,12 +44,12 @@ func TestIterator(t *testing.T) {
 				}
 			}
 		}
-		newIt := func(ds dumbSet) bitmap.Iterator {
-			smset := bitmap.Wrap(&al, nil, bitmap.SmallEmpty)
+		newIt := func(ds dumbSet) bitmap2.IBitmap {
+			smset := bitmap2.Small{}
 			for _, v := range ds {
 				smset.Set(v)
 			}
-			return smset.Iterator(1 << 20)
+			return &smset
 		}
 		for k := 1; k < 230; k += k/2 + 1 {
 			for itk := 2; itk < 6; itk++ {
@@ -63,9 +60,9 @@ func TestIterator(t *testing.T) {
 	}
 }
 
-func testIter(t *testing.T, k int, itk int, gen func() int32, newit func(ds dumbSet) bitmap.Iterator) {
+func testIter(t *testing.T, k int, itk int, gen func() int32, newit func(ds dumbSet) bitmap2.IBitmap) {
 	dss := make([]dumbSet, itk)
-	itsOr := make([]bitmap.Iterator, itk)
+	itsOr := make([]bitmap2.IBitmap, itk)
 	var dsOr, dsAnd dumbSet
 	uniqOr := make(map[int32]bool, k)
 	for i := range dss {
@@ -84,19 +81,22 @@ func testIter(t *testing.T, k int, itk int, gen func() int32, newit func(ds dumb
 			dsAnd = dsAnd.Intersect(dss[i])
 		}
 	}
-	dsItOr := dumbFromIter(bitmap.NewOrIterator(itsOr))
-	dsItAnd := dumbFromIter(bitmap.NewAndIterator(itsOr))
-	matItOr := dumbFromIter(bitmap.Materialize(bitmap.NewOrIterator(itsOr)))
-	matItAnd := dumbFromIter(bitmap.Materialize(bitmap.NewAndIterator(itsOr)))
+	orMap := bitmap2.NewOrBitmap(itsOr)
+	andMap := bitmap2.NewAndBitmap(itsOr)
+	dsItOr := dumbFromIter(orMap)
+	dsItAnd := dumbFromIter(andMap)
+	matItOr := dumbFromIter(bitmap2.Materialize(orMap))
+	matItAnd := dumbFromIter(bitmap2.Materialize(andMap))
 
 	require.Len(t, dsOr, len(uniqOr))
 	for i := range dss {
 		require.Equal(t, dss[i], dumbFromIter(itsOr[i]))
 	}
 	require.Equal(t, dsOr, dsItOr)
+	runtime.KeepAlive(&itsOr)
+	runtime.KeepAlive(&dss)
+	require.Equal(t, dsAnd, dsItAnd)
 	require.Equal(t, dsAnd, dsItAnd)
 	require.Equal(t, dsOr, matItOr)
 	require.Equal(t, dsAnd, matItAnd)
-	runtime.KeepAlive(&itsOr)
-	runtime.KeepAlive(&dss)
 }

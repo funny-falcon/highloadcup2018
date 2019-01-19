@@ -14,6 +14,7 @@ import (
 var path = flag.String("path", "/tmp/data/", "data path")
 var port = flag.String("port", "80", "port to listen")
 var onlyload = flag.Bool("onlyload", false, "only load")
+var memprofile = flag.String("memprofile", "", "memprofile")
 
 func main() {
 	log.SetFlags(log.Lmicroseconds | log.Lshortfile)
