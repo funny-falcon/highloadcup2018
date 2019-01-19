@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"log"
 	"net/http"
@@ -40,10 +41,14 @@ var GET = []byte("GET")
 func handler(ctx *fasthttp.RequestCtx) {
 	meth := ctx.Method()
 	path := ctx.Path()
+	if !bytes.HasPrefix(path, []byte("/accounts/")) {
+		ctx.SetStatusCode(400)
+		return
+	}
 	logf("Method: %s Path: %s, args: %s", meth, path, ctx.QueryArgs())
 	switch {
 	case ctx.IsGet():
-		getHandler(ctx)
+		getHandler(ctx, path[10:])
 	}
 }
 

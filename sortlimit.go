@@ -1,7 +1,5 @@
 package main
 
-import "sort"
-
 type counter struct {
 	u uint32
 	s float64
@@ -20,17 +18,18 @@ func SortGroupLimit(limit int, order int, gr []counter, less func(idi, idj uint3
 		limit = i
 	}
 	if order == 1 {
-		sort.Slice(gr, func(i, j int) bool {
-			gi, gj := gr[i], gr[j]
-			return gi.s < gj.s || gi.s == gj.s && less(gi.u, gj.u)
-		})
-		//SortGroupLimitAsc(limit, gr, less)
+		/*
+			sort.Slice(gr, func(i, j int) bool {
+				gi, gj := gr[i], gr[j]
+				return gi.s < gj.s || gi.s == gj.s && less(gi.u, gj.u)
+			})*/
+		SortGroupLimitAsc(limit, gr, less)
 	} else {
-		sort.Slice(gr, func(i, j int) bool {
+		/*sort.Slice(gr, func(i, j int) bool {
 			gi, gj := gr[i], gr[j]
 			return gi.s > gj.s || gi.s == gj.s && !less(gi.u, gj.u)
-		})
-		//SortGroupLimitDesc(limit, gr, less)
+		})*/
+		SortGroupLimitDesc(limit, gr, less)
 	}
 	if limit < len(gr) {
 		gr = gr[:limit]
@@ -133,5 +132,61 @@ func SortGroupLimitDesc(limit int, gr []counter, less func(idi, idj uint32) bool
 		SortGroupLimitDesc(limit-i, gr[i:], less)
 	} else {
 		SortGroupLimitDesc(limit, gr[:i], less)
+	}
+}
+
+type cntHash []counter
+
+func newCntHash(n int) cntHash {
+	l := 8
+	n <<= 1
+	for ; l < n; l <<= 1 {
+	}
+	return make(cntHash, l)
+}
+
+func (c cntHash) Insert(id uint32) *counter {
+	mask := uint32(len(c) - 1)
+	pos := id & mask
+	d := uint32(1)
+	for {
+		cnt := &c[pos]
+		if cnt.u == id {
+			return cnt
+		}
+		if cnt.u == 0 {
+			cnt.u = id
+			return cnt
+		}
+		pos = (pos + d) & mask
+		d++
+	}
+}
+
+type uidHash []int32
+
+func newUidHash(n int) uidHash {
+	l := 8
+	n <<= 1
+	for ; l < n; l <<= 1 {
+	}
+	return make(uidHash, l)
+}
+
+func (c uidHash) Insert(id int32) bool {
+	mask := int32(len(c) - 1)
+	pos := id & mask
+	d := int32(1)
+	for {
+		u := &c[pos]
+		if *u == id {
+			return false
+		}
+		if *u == 0 {
+			*u = id
+			return true
+		}
+		pos = (pos + d) & mask
+		d++
 	}
 }

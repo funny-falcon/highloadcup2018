@@ -90,6 +90,17 @@ func (s *Likes) Unset(id int32) {
 	s.Size--
 }
 
+func (s *Likes) GetTs(id int32) int32 {
+	if s.LikesImpl == nil || s.Size == 0 {
+		return 0
+	}
+	ix := searchSparseLikes(s.Data[:s.Size], id)
+	if ix < int(s.Size) && s.Data[ix].UidAndCnt>>8 == id {
+		return s.Data[ix].Ts
+	}
+	return 0
+}
+
 func (s *Likes) Iterator() (Iterator, int32) {
 	if s.Size == 0 {
 		return EmptyIt, NoNext

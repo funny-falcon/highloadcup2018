@@ -49,6 +49,16 @@ func (h *Huge) Unset(i int32) {
 	}
 }
 
+func (h *Huge) Has(i int32) bool {
+	k := int(i >> 3)
+	if k >= len(h.B) {
+		return false
+	}
+	p := aref8(h.p, k)
+	bit := uint8(1) << uint32(i&7)
+	return *p&bit != 0
+}
+
 func (h *Huge) LastSpan() int32 {
 	return int32((len(h.B)<<3)-1) &^ BlockMask
 }

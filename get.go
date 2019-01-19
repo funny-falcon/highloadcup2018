@@ -13,17 +13,21 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-var FilterPath = []byte("/accounts/filter/")
-var GroupsPath = []byte("/accounts/group/")
-
-func getHandler(ctx *fasthttp.RequestCtx) {
-	path := ctx.Path()
+func getHandler(ctx *fasthttp.RequestCtx, path []byte) {
 	logf("ctx.Path: %s, args: %s", path, ctx.QueryArgs())
 	switch {
-	case bytes.Equal(path, FilterPath):
+	case bytes.Equal(path, []byte("filter/")):
 		doFilter(ctx)
-	case bytes.Equal(path, GroupsPath):
+	case bytes.Equal(path, []byte("group/")):
 		doGroup(ctx)
+	case bytes.HasSuffix(path, []byte("/suggest/")):
+		ids := path[:bytes.IndexByte(path, '/')]
+		id, err := strconv.Atoi(string(ids))
+		if err != nil {
+			ctx.SetStatusCode(400)
+			return
+		}
+		doSuggest(ctx, id)
 	}
 
 }
@@ -62,11 +66,9 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 		if bytes.Equal(key, []byte("limit")) {
 			var err error
 			limit, err = strconv.Atoi(string(val))
-			if err != nil {
+			if err != nil || limit == 0 {
 				logf("limit: %s", err)
 				correct = false
-			} else if limit == 0 {
-				emptyRes = true
 			}
 			return
 		}
@@ -489,7 +491,7 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 	stream := config.BorrowStream(nil)
 	stream.Write([]byte(`{"accounts":[`))
 	for i, acc := range resAccs {
-		outAccount(outFields, acc, stream)
+		outAccount(&outFields, acc, stream)
 		if i != len(resAccs)-1 {
 			stream.WriteMore()
 		}
@@ -543,11 +545,9 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 		case "limit":
 			var err error
 			limit, err = strconv.Atoi(sval)
-			if err != nil {
+			if err != nil || limit == 0 {
 				logf("limit: %s", err)
 				correct = false
-			} else if limit == 0 {
-				emptyRes = true
 			}
 		case "order":
 			var err error
@@ -925,7 +925,197 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 	config.ReturnStream(stream)
 }
 
-func outAccount(out OutFields, acc *Account, stream *jsoniter.Stream) {
+func doSuggest(ctx *fasthttp.RequestCtx, iid int) {
+	id := int32(iid)
+	if int(id) != iid {
+		ctx.SetStatusCode(404)
+		return
+	}
+
+	acc := HasAccount(id)
+	if acc == nil {
+		ctx.SetStatusCode(404)
+		return
+	}
+
+	args := ctx.QueryArgs()
+	//iterators := make([]bitmap.IBitmap, 0, 4)
+	var filter func(uid int32) bool
+	correct := true
+	emptyRes := false
+	limit := -1
+
+	args.VisitAll(func(key []byte, val []byte) {
+		if !correct {
+			return
+		}
+		//logf("arg %s: %s", key, val)
+
+		skey := string(key)
+		sval := string(val)
+		switch skey {
+		case "limit":
+			var err error
+			limit, err = strconv.Atoi(sval)
+			if err != nil || limit == 0 {
+				logf("limit: %s", err)
+				correct = false
+			}
+		case "country":
+			if len(sval) == 0 {
+				correct = false
+				return
+			}
+			ix := CountryStrings.Find(sval)
+			if ix == 0 {
+				logf("country %s not found", sval)
+				emptyRes = true
+				return
+			}
+			if filter != nil {
+				old := filter
+				filter = func(uid int32) bool { return old(uid) && uint32(Accounts[uid].Country) == ix }
+			} else {
+				filter = func(uid int32) bool { return uint32(Accounts[uid].Country) == ix }
+			}
+			//iterators = append(iterators, CountryStrings.GetMap(ix))
+		case "city":
+			if len(sval) == 0 {
+				correct = false
+				return
+			}
+			ix := CityStrings.Find(sval)
+			if ix == 0 {
+				logf("city %s not found", sval)
+				emptyRes = true
+				return
+			}
+			if filter != nil {
+				old := filter
+				filter = func(uid int32) bool { return old(uid) && uint32(Accounts[uid].City) == ix }
+			} else {
+				filter = func(uid int32) bool { return uint32(Accounts[uid].City) == ix }
+			}
+			//iterators = append(iterators, CityStrings.GetMap(ix))
+		case "query_id":
+			// ignore
+		default:
+			logf("default incorrect")
+			correct = false
+		}
+	})
+	logf("correct %v limit %d filter %v", correct, limit, filter)
+
+	if !correct || limit <= 0 {
+		logf("correct %v", correct)
+		ctx.SetStatusCode(400)
+		return
+	} else if emptyRes {
+		logf("empty result")
+		ctx.SetStatusCode(200)
+		ctx.SetBody(EmptyFilterRes)
+		return
+	}
+
+	sameSex := &MaleMap
+	if !acc.Sex {
+		sameSex = &FemaleMap
+	}
+
+	small := bitmap.GetSmall(&acc.Likes)
+	if small.SmallImpl == nil {
+		logf("empty likes")
+		ctx.SetStatusCode(200)
+		ctx.SetBody(EmptyFilterRes)
+		return
+	}
+
+	likerss := make([]*bitmap.Likes, 0, small.Size)
+	sz := 0
+	for _, uid := range small.Data[:small.Size] {
+		likers := GetLikers(uid)
+		likerss = append(likerss, likers)
+		sz += int(likers.Size)
+	}
+	logf("likerss %d", len(likerss))
+
+	hsh := newCntHash(sz)
+	for _, likers := range likerss {
+		ts := likers.GetTs(id)
+		if ts == 0 {
+			panic("no")
+		}
+		for _, ucnt := range likers.Data[:likers.Size] {
+			oid := ucnt.UidAndCnt >> 8
+			if !sameSex.Has(oid) {
+				panic("no")
+				continue
+			}
+			if filter != nil && !filter(oid) {
+				continue
+			}
+			logf("oid %d", oid)
+			ots := ucnt.Ts
+			dlt := ots - ts
+			if dlt < 0 {
+				dlt = -dlt
+			} else if dlt == 0 {
+				dlt = 1
+			}
+			cnt := hsh.Insert(uint32(oid))
+			cnt.s += 1.0 / float64(dlt)
+		}
+	}
+
+	groups := SortGroupLimit(len(hsh), -1, hsh, func(idi, idj uint32) bool {
+		return idi > idj
+	})
+	logf("groups %v", groups)
+
+	uidHash := newUidHash(limit + int(small.Size))
+	for _, oid := range small.Data[:small.Size] {
+		uidHash.Insert(oid)
+	}
+	logf("uidHash %v", uidHash)
+	uids := make([]int32, 0, limit)
+Outter:
+	for _, cnt := range groups {
+		osmall := bitmap.GetSmall(&Accounts[cnt.u].Likes)
+		logf("osmall %d %v", osmall.Size, osmall.Data[:osmall.Size])
+		for _, oid := range osmall.Data[:osmall.Size] {
+			//logf("osmall oid %d", oid)
+			if sameSex.Has(oid) {
+				panic("no")
+			}
+			if oid == id || !uidHash.Insert(oid) {
+				continue
+			}
+			uids = append(uids, oid)
+			if len(uids) == limit {
+				break Outter
+			}
+		}
+	}
+	logf("uids len %d", len(uids))
+
+	ctx.SetStatusCode(200)
+	ctx.SetContentType("application/json")
+	stream := config.BorrowStream(nil)
+	stream.Write([]byte(`{"accounts":[`))
+	outFields := OutFields{Status: true, Fname: true, Sname: true,
+		Country: false}
+	for i, id := range uids {
+		outAccount(&outFields, &Accounts[id], stream)
+		if i != len(uids)-1 {
+			stream.WriteMore()
+		}
+	}
+	stream.Write([]byte(`]}`))
+	ctx.SetBody(stream.Buffer())
+	config.ReturnStream(stream)
+}
+
+func outAccount(out *OutFields, acc *Account, stream *jsoniter.Stream) {
 	stream.Write([]byte(`{"id":`))
 	stream.WriteInt32(acc.Uid)
 	stream.Write([]byte(`,"email":`))

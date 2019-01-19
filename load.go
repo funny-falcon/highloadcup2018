@@ -202,6 +202,7 @@ func Load() {
 		}()
 	}
 	debug.SetGCPercent(20)
+
 	fmt.Println("LikesAlloc ", bitmap.LikesAlloc.TotalAlloc, bitmap.LikesAlloc.TotalFree,
 		len(bitmap.LikesAlloc.Free)*alloc2.ChunkSize)
 	fmt.Println("SmallAlloc ", bitmap.SmallAlloc.TotalAlloc, bitmap.SmallAlloc.TotalFree,
@@ -229,6 +230,7 @@ func Load() {
 		}
 		f.Close()
 	}
+
 	/*
 		fmt.Println("SnameStrings ", SnameStrings.Stat())
 		fmt.Println("CityStrings ", CityStrings.Stat())
