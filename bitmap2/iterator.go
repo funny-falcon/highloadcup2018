@@ -80,6 +80,13 @@ func NewAndBitmap(bm []IBitmap) IBitmap {
 	if len(bm) == 1 {
 		return am.B[0]
 	}
+	if len(bm) == 2 {
+		hg1, ok1 := bm[0].(*Huge)
+		hg2, ok2 := bm[1].(*Huge)
+		if ok1 && ok2 {
+			return &And2HugeBitmap{hg1, hg2}
+		}
+	}
 	return am
 }
 
@@ -125,6 +132,30 @@ func (it *AndIterator) FetchAndNext(span int32) (*Block, int32) {
 		}
 	}
 	return &it.B, next
+}
+
+type And2HugeBitmap [2]*Huge
+
+func (h2 *And2HugeBitmap) Iterator() (Iterator, int32) {
+	_, lasta := h2[0].Iterator()
+	_, lastb := h2[1].Iterator()
+	it := And2HugeBitmapIter{M: *h2}
+	if lasta < lastb {
+		return &it, lasta
+	}
+	return &it, lastb
+}
+
+type And2HugeBitmapIter struct {
+	M And2HugeBitmap
+	Block
+}
+
+func (it *And2HugeBitmapIter) FetchAndNext(span int32) (*Block, int32) {
+	bla, lasta := it.M[0].FetchAndNext(span)
+	blb, _ := it.M[1].FetchAndNext(span)
+	it.Block = bla.IntersectNew(blb)
+	return &it.Block, lasta
 }
 
 type OrBitmap struct {

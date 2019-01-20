@@ -263,8 +263,8 @@ var SnameOnce = NewOnce(SnameSorted.Init)
 var CityStrings SomeStrings
 var CountryStrings SomeStrings
 
-//var InterestStrings = SomeStrings{Huge: true}
-var InterestStrings = SomeStrings{}
+//var InterestStrings = SomeStrings{}
+var InterestStrings = SomeStrings{Huge: true}
 
 func GetStatusIx(status string) (uint8, bool) {
 	switch status {
