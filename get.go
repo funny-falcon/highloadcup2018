@@ -1233,21 +1233,34 @@ func doRecommend(ctx *fasthttp.RequestCtx, iid int) {
 	}
 	maps = append(maps, bitmap.NewOrBitmap(ormaps))
 
-	rmap := bitmap.NewAndBitmap(maps)
+	//rmap := bitmap.NewAndBitmap(maps)
 
 	recs := Recommends{
 		Birth: acc.Birth,
 		Limit: limit,
 	}
 
-	bitmap.LoopMap(rmap, func(uids []int32) bool {
-		for _, uid := range uids {
-			cnt := interests.IntersectNew(&Interests[uid]).CountV()
-			othacc := GetSmallAccount(uid)
-			recs.Add(othacc, uid, cnt)
+	tmaps := []bitmap.IBitmap{
+		bitmap.NewAndBitmap(append(maps, &PremiumNow, &FreeMap)),
+		bitmap.NewAndBitmap(append(maps, &PremiumNow, &ComplexMap)),
+		bitmap.NewAndBitmap(append(maps, &PremiumNow, &MeetingMap)),
+		bitmap.NewAndBitmap(append(maps, &PremiumNotNow, &FreeMap)),
+		bitmap.NewAndBitmap(append(maps, &PremiumNotNow, &MeetingOrComplexMap)),
+	}
+
+	for _, tmap := range tmaps {
+		bitmap.LoopMap(tmap, func(uids []int32) bool {
+			for _, uid := range uids {
+				cnt := interests.IntersectNew(&Interests[uid]).CountV()
+				othacc := GetSmallAccount(uid)
+				recs.Add(othacc, uid, cnt)
+			}
+			return true
+		})
+		if len(recs.Accs) == limit {
+			break
 		}
-		return true
-	})
+	}
 
 	recs.Heapify()
 
