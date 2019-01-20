@@ -26,6 +26,17 @@ func (s *Small) Uintptr() uintptr {
 	return uintptr(unsafe.Pointer(s.SmallImpl))
 }
 
+func (s *Small) ForceAlloc() uintptr {
+	ncap := s.Size + 3
+	ptr := SmallAlloc.Alloc(4 + int(ncap)*4)
+	impl := (*SmallImpl)(ptr)
+	impl.Size = s.Size
+	impl.Cap = ncap
+	copy(impl.Data[:], s.Data[:s.Size])
+	s.SmallImpl = impl
+	return uintptr(ptr)
+}
+
 func (s *Small) GetSize() uint32 {
 	return uint32(s.Size)
 }

@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"runtime/pprof"
+	"sync"
 
 	"github.com/funny-falcon/highloadcup2018/alloc2"
 	bitmap "github.com/funny-falcon/highloadcup2018/bitmap2"
@@ -17,9 +18,11 @@ import (
 	jsoniter "github.com/json-iterator/go"
 )
 
-var config = jsoniter.Config{
-	OnlyTaggedField: true,
-	CaseSensitive:   true,
+var jsonConfig = jsoniter.Config{
+	DisallowUnknownFields:         true,
+	ObjectFieldMustBeSimpleString: true,
+	OnlyTaggedField:               true,
+	CaseSensitive:                 true,
 }.Froze()
 
 type AccountIn struct {
@@ -95,7 +98,7 @@ func Load() {
 				log.Fatal(err)
 			}
 			defer rc.Close()
-			iter := jsoniter.Parse(config, rc, 256*1024)
+			iter := jsoniter.Parse(jsonConfig, rc, 256*1024)
 			if attr := iter.ReadObject(); attr != "accounts" {
 				log.Fatal("No accounts ", attr, iter.Error)
 			}
@@ -108,84 +111,7 @@ func Load() {
 				if outfile != nil {
 					fmt.Fprintf(outfile, "%+v\n", &accin)
 				}
-				var ok bool
-				acc := SureAccount(int32(accin.Id))
-				if MaxId <= acc.Uid {
-					MaxId = acc.Uid + 1
-				}
-				acc.Birth = accin.Birth
-				byear := GetBirthYear(acc.Birth)
-				BirthYearIndexes[byear].Set(acc.Uid)
-				acc.Joined = accin.Joined
-				jyear := GetJoinYear(acc.Joined)
-				JoinYearIndexes[jyear].Set(acc.Uid)
-				acc.Sex = accin.Sex == "m"
-				if acc.Sex {
-					MaleMap.Set(acc.Uid)
-				} else {
-					FemaleMap.Set(acc.Uid)
-				}
-				acc.Status, ok = GetStatusIx(accin.Status)
-				if !ok {
-					panic("status unknown " + accin.Status)
-				}
-				switch acc.Status {
-				case StatusFreeIx:
-					FreeMap.Set(acc.Uid)
-					FreeOrComplexMap.Set(acc.Uid)
-					FreeOrMeetingMap.Set(acc.Uid)
-				case StatusMeetingIx:
-					MeetingMap.Set(acc.Uid)
-					FreeOrMeetingMap.Set(acc.Uid)
-					MeetingOrComplexMap.Set(acc.Uid)
-				case StatusComplexIx:
-					ComplexMap.Set(acc.Uid)
-					FreeOrComplexMap.Set(acc.Uid)
-					MeetingOrComplexMap.Set(acc.Uid)
-				}
-				acc.Email, ok = EmailIndex.InsertUid(accin.Email, acc.Uid)
-				if !ok {
-					panic("email is not unique " + accin.Email)
-				}
-				acc.EmailStart = GetEmailStart(accin.Email)
-				domain := DomainFromEmail(accin.Email)
-				acc.Domain = uint8(DomainsStrings.Add(domain, acc.Uid))
-				IndexGtLtEmail(accin.Email, acc.Uid, true)
-				acc.Phone, ok = PhoneIndex.InsertUid(accin.Phone, acc.Uid)
-				if accin.Phone != "" {
-					if !ok {
-						panic("phone is not unique " + accin.Phone)
-					}
-					code := CodeFromPhone(accin.Phone)
-					acc.Code = uint8(PhoneCodesStrings.Add(code, acc.Uid))
-				}
-				acc.Fname = uint8(FnameStrings.Add(accin.Fname, acc.Uid))
-				acc.Sname = uint16(SnameStrings.Add(accin.Sname, acc.Uid))
-				SnameOnce.Reset()
-				acc.City = uint16(CityStrings.Add(accin.City, acc.Uid))
-				acc.Country = uint8(CountryStrings.Add(accin.Country, acc.Uid))
-				acc.PremiumStart = accin.Premium.Start
-				if accin.Premium.Finish != 0 {
-					acc.PremiumLength = GetPremiumLength(accin.Premium.Start, accin.Premium.Finish)
-					acc.PremiumNow = accin.Premium.Start <= CurTs && accin.Premium.Finish > CurTs
-					if acc.PremiumNow {
-						PremiumNow.Set(acc.Uid)
-					}
-					PremiumNotNull.Set(acc.Uid)
-				} else {
-					PremiumNull.Set(acc.Uid)
-				}
-				for _, interest := range accin.Interests {
-					ix := InterestStrings.Add(interest, acc.Uid)
-					SetInterest(acc.Uid, int32(ix-1))
-					//acc.SetInterest(ix - 1)
-				}
-				var likes bitmap.Small
-				for _, like := range accin.Likes {
-					likes.Set(like.Id)
-					SureLikers(like.Id).SetTs(acc.Uid, like.Ts)
-				}
-				acc.Likes = likes.Uintptr()
+				InsertAccount(&accin)
 			}
 			if iter.Error != nil {
 				log.Fatal("Error reading accounts: ", iter.Error)
@@ -252,6 +178,94 @@ func Load() {
 		fmt.Print("PremiumNotNull ")
 		fmt.Println(PremiumNotNull.Stat())
 	*/
+}
+
+func InsertAccount(accin *AccountIn) {
+	var ok bool
+	acc := SureAccount(int32(accin.Id))
+	acc.Birth = accin.Birth
+
+	byear := GetBirthYear(acc.Birth)
+	BirthYearIndexes[byear].Set(acc.Uid)
+
+	acc.Joined = accin.Joined
+	jyear := GetJoinYear(acc.Joined)
+	JoinYearIndexes[jyear].Set(acc.Uid)
+
+	acc.Sex = accin.Sex == "m"
+	if acc.Sex {
+		MaleMap.Set(acc.Uid)
+	} else {
+		FemaleMap.Set(acc.Uid)
+	}
+	acc.Status, ok = GetStatusIx(accin.Status)
+	if !ok {
+		panic("status unknown " + accin.Status)
+	}
+	switch acc.Status {
+	case StatusFreeIx:
+		FreeMap.Set(acc.Uid)
+		FreeOrComplexMap.Set(acc.Uid)
+		FreeOrMeetingMap.Set(acc.Uid)
+	case StatusMeetingIx:
+		MeetingMap.Set(acc.Uid)
+		FreeOrMeetingMap.Set(acc.Uid)
+		MeetingOrComplexMap.Set(acc.Uid)
+	case StatusComplexIx:
+		ComplexMap.Set(acc.Uid)
+		FreeOrComplexMap.Set(acc.Uid)
+		MeetingOrComplexMap.Set(acc.Uid)
+	}
+	acc.Email, ok = EmailIndex.InsertUid(accin.Email, acc.Uid)
+	if !ok {
+		panic("email is not unique " + accin.Email)
+	}
+	acc.EmailStart = GetEmailStart(accin.Email)
+	domain := DomainFromEmail(accin.Email)
+	acc.Domain = uint8(DomainsStrings.Add(domain, acc.Uid))
+	IndexGtLtEmail(accin.Email, acc.Uid, true)
+	acc.Phone, ok = PhoneIndex.InsertUid(accin.Phone, acc.Uid)
+	if accin.Phone != "" {
+		if !ok {
+			panic("phone is not unique " + accin.Phone)
+		}
+		code := CodeFromPhone(accin.Phone)
+		acc.Code = uint8(PhoneCodesStrings.Add(code, acc.Uid))
+	}
+	acc.Fname = uint8(FnameStrings.Add(accin.Fname, acc.Uid))
+	acc.Sname = uint16(SnameStrings.Add(accin.Sname, acc.Uid))
+	SnameOnce.Reset()
+	acc.City = uint16(CityStrings.Add(accin.City, acc.Uid))
+	acc.Country = uint8(CountryStrings.Add(accin.Country, acc.Uid))
+	acc.PremiumStart = accin.Premium.Start
+	if accin.Premium.Finish != 0 {
+		acc.PremiumLength = GetPremiumLength(accin.Premium.Start, accin.Premium.Finish)
+		acc.PremiumNow = accin.Premium.Start <= CurTs && accin.Premium.Finish > CurTs
+		if acc.PremiumNow {
+			PremiumNow.Set(acc.Uid)
+		}
+		PremiumNotNull.Set(acc.Uid)
+	} else {
+		PremiumNull.Set(acc.Uid)
+	}
+	for _, interest := range accin.Interests {
+		ix := InterestStrings.Add(interest, acc.Uid)
+		SetInterest(acc.Uid, int32(ix-1))
+		//acc.SetInterest(ix - 1)
+	}
+	var smallImpl = likesImplPool.Get().(*bitmap.SmallImpl)
+	smallImpl.Size = 0
+	likes := bitmap.Small{smallImpl}
+	for _, like := range accin.Likes {
+		likes.Set(like.Id)
+		SureLikers(like.Id, func(l *bitmap.Likes) { l.SetTs(acc.Uid, like.Ts) })
+	}
+	acc.Likes = likes.ForceAlloc()
+	likesImplPool.Put(smallImpl)
+}
+
+var likesImplPool = sync.Pool{
+	New: func() interface{} { return &bitmap.SmallImpl{Cap: 256} },
 }
 
 /*

@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	bitmap "github.com/funny-falcon/highloadcup2018/bitmap2"
@@ -79,7 +80,11 @@ func SureCapa(slicePtr interface{}, capa int) {
 	val.Set(newVal)
 }
 
+var accMutex sync.Mutex
+
 func SureAccount(i int32) *Account {
+	accMutex.Lock()
+	defer accMutex.Unlock()
 	if int(i) >= len(Accounts) {
 		ln := int32(1)
 		for ; ln < i; ln *= 2 {
@@ -89,6 +94,9 @@ func SureAccount(i int32) *Account {
 		}
 		SureCapa(&Accounts, int(ln))
 		SureCapa(&Interests, int(ln))
+	}
+	if i >= MaxId {
+		MaxId = i + 1
 	}
 	AccountsMap.Set(i)
 	acc := &Accounts[i]
@@ -100,12 +108,12 @@ func SetInterest(i int32, ix int32) {
 	Interests[i].Set(ix)
 }
 
-func UnsetInterest(i int32, ix uint32) {
-
+func UnsetInterest(i int32, ix int32) {
+	Interests[i].Unset(ix)
 }
 
 func HasAccount(i int32) *Account {
-	if int(i) >= len(Accounts) {
+	if i >= MaxId {
 		return nil
 	}
 	if Accounts[i].Uid == 0 {
@@ -325,8 +333,10 @@ func (s *SnameSorting) PrefixRange(pref string) (i, j int) {
 }
 
 var Likers = make([]uintptr, 1536*1024)
+var likersMtx sync.Mutex
 
-func SureLikers(i int32) *bitmap.Likes {
+func SureLikers(i int32, f func(*bitmap.Likes)) {
+	likersMtx.Lock()
 	if int(i) >= len(Likers) {
 		ln := int32(1)
 		for ; ln < i; ln *= 2 {
@@ -335,7 +345,8 @@ func SureLikers(i int32) *bitmap.Likes {
 		copy(newLikers, Likers)
 		Likers = newLikers
 	}
-	return bitmap.GetLikes(&Likers[i])
+	f(bitmap.GetLikes(&Likers[i]))
+	likersMtx.Unlock()
 }
 
 func GetLikers(i int32) *bitmap.Likes {

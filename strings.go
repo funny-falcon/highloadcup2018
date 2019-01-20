@@ -182,6 +182,17 @@ func (us *UniqStrings) InsertUid(s string, uid int32) (uint32, bool) {
 	return ix, false
 }
 
+func (us *UniqStrings) IsFree(email string) bool {
+	us.Lock()
+	defer us.Unlock()
+
+	ix := us.Find(email)
+	if ix == 0 {
+		return true
+	}
+	return us.GetHndl(ix).Handle == 0
+}
+
 func (us *UniqStrings) ResetUser(ix uint32, uid int32) {
 	if ix == 0 {
 		return

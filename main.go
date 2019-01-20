@@ -49,6 +49,8 @@ func handler(ctx *fasthttp.RequestCtx) {
 	switch {
 	case ctx.IsGet():
 		getHandler(ctx, path[10:])
+	case ctx.IsPost():
+		postHandler(ctx, path[10:])
 	}
 }
 

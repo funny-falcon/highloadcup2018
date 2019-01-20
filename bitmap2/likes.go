@@ -43,6 +43,22 @@ func (s *Likes) Set(id int32) {
 	s.SetTs(id, 0)
 }
 
+/*
+const likesMtxCnt = 64
+
+var likesMtx [likesMtxCnt]sync.Mutex
+
+func (s *Likes) Lock() {
+	ix := uintptr(unsafe.Pointer(s)) >> 3
+	likesMtx[ix&(likesMtxCnt-1)].Lock()
+}
+
+func (s *Likes) Unlock() {
+	ix := uintptr(unsafe.Pointer(s)) >> 3
+	likesMtx[ix&(likesMtxCnt-1)].Unlock()
+}
+*/
+
 func (s *Likes) SetTs(id int32, ts int32) {
 	if s.LikesImpl == nil {
 		ncap := uint16(2)

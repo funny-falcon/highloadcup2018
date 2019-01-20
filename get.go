@@ -36,6 +36,8 @@ func getHandler(ctx *fasthttp.RequestCtx, path []byte) {
 			return
 		}
 		doRecommend(ctx, id)
+	default:
+		ctx.SetStatusCode(404)
 	}
 
 }
@@ -471,7 +473,7 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 	if filter == nil {
 		bitmap.LoopMap(iterator, func(uids []int32) bool {
 			for _, uid := range uids {
-				resAccs = append(resAccs, &Accounts[uid])
+				resAccs = append(resAccs, HasAccount(uid))
 				if len(resAccs) == limit {
 					return false
 				}
@@ -481,7 +483,7 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 	} else {
 		bitmap.LoopMap(iterator, func(uids []int32) bool {
 			for _, uid := range uids {
-				acc := &Accounts[uid]
+				acc := HasAccount(uid)
 				if !filter(acc) {
 					continue
 				}
@@ -496,7 +498,7 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 
 	ctx.SetStatusCode(200)
 	ctx.SetContentType("application/json")
-	stream := config.BorrowStream(nil)
+	stream := jsonConfig.BorrowStream(nil)
 	stream.Write([]byte(`{"accounts":[`))
 	for i, acc := range resAccs {
 		outAccount(&outFields, acc, stream)
@@ -506,7 +508,7 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 	}
 	stream.Write([]byte(`]}`))
 	ctx.SetBody(stream.Buffer())
-	config.ReturnStream(stream)
+	jsonConfig.ReturnStream(stream)
 }
 
 const (
@@ -712,7 +714,7 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 
 	ctx.SetStatusCode(200)
 	ctx.SetContentType("application/json")
-	stream := config.BorrowStream(nil)
+	stream := jsonConfig.BorrowStream(nil)
 	stream.Write([]byte(`{"groups":[`))
 
 	var groups []counter
@@ -831,7 +833,7 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 			mapper := func(u []int32) bool {
 				for _, uid := range u {
 					k := 0
-					acc := &Accounts[uid]
+					acc := HasAccount(uid)
 					if groupBy&GroupByCity != 0 {
 						k = int(acc.City) * cityMult
 					} else if groupBy&GroupByCountry != 0 {
@@ -930,7 +932,7 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 
 	stream.Write([]byte("]}"))
 	ctx.SetBody(stream.Buffer())
-	config.ReturnStream(stream)
+	jsonConfig.ReturnStream(stream)
 }
 
 func doSuggest(ctx *fasthttp.RequestCtx, iid int) {
@@ -982,9 +984,9 @@ func doSuggest(ctx *fasthttp.RequestCtx, iid int) {
 			}
 			if filter != nil {
 				old := filter
-				filter = func(uid int32) bool { return old(uid) && uint32(Accounts[uid].Country) == ix }
+				filter = func(uid int32) bool { return old(uid) && uint32(HasAccount(uid).Country) == ix }
 			} else {
-				filter = func(uid int32) bool { return uint32(Accounts[uid].Country) == ix }
+				filter = func(uid int32) bool { return uint32(HasAccount(uid).Country) == ix }
 			}
 			//iterators = append(iterators, CountryStrings.GetMap(ix))
 		case "city":
@@ -1000,9 +1002,9 @@ func doSuggest(ctx *fasthttp.RequestCtx, iid int) {
 			}
 			if filter != nil {
 				old := filter
-				filter = func(uid int32) bool { return old(uid) && uint32(Accounts[uid].City) == ix }
+				filter = func(uid int32) bool { return old(uid) && uint32(HasAccount(uid).City) == ix }
 			} else {
-				filter = func(uid int32) bool { return uint32(Accounts[uid].City) == ix }
+				filter = func(uid int32) bool { return uint32(HasAccount(uid).City) == ix }
 			}
 			//iterators = append(iterators, CityStrings.GetMap(ix))
 		case "query_id":
@@ -1047,7 +1049,7 @@ func doSuggest(ctx *fasthttp.RequestCtx, iid int) {
 		likerss = append(likerss, likers)
 		sz += int(likers.Size)
 	}
-	logf("likerss %d", len(likerss))
+	//logf("likerss %d", len(likerss))
 
 	hsh := newCntHash(sz)
 	for _, likers := range likerss {
@@ -1066,7 +1068,7 @@ func doSuggest(ctx *fasthttp.RequestCtx, iid int) {
 			if filter != nil && !filter(oid) {
 				continue
 			}
-			logf("oid %d", oid)
+			//logf("oid %d", oid)
 			ots := ucnt.Ts
 			dlt := ots - ts
 			if dlt < 0 {
@@ -1085,19 +1087,19 @@ func doSuggest(ctx *fasthttp.RequestCtx, iid int) {
 		})
 	*/
 	groups := Heapify(hsh)
-	logf("groups %v", groups)
+	//logf("groups %v", groups)
 
 	uidHash := newUidHash(limit + int(small.Size))
 	for _, oid := range small.Data[:small.Size] {
 		uidHash.Insert(oid)
 	}
-	logf("uidHash %v", uidHash)
+	//logf("uidHash %v", uidHash)
 	uids := make([]int32, 0, limit)
 Outter:
 	for len(groups) > 0 {
 		cnt := groups[0]
-		osmall := bitmap.GetSmall(&Accounts[cnt.u].Likes)
-		logf("osmall %d %v", osmall.Size, osmall.Data[:osmall.Size])
+		osmall := bitmap.GetSmall(&HasAccount(int32(cnt.u)).Likes)
+		//logf("osmall %d %v", osmall.Size, osmall.Data[:osmall.Size])
 		for _, oid := range osmall.Data[:osmall.Size] {
 			//logf("osmall oid %d", oid)
 			/*
@@ -1119,19 +1121,19 @@ Outter:
 
 	ctx.SetStatusCode(200)
 	ctx.SetContentType("application/json")
-	stream := config.BorrowStream(nil)
+	stream := jsonConfig.BorrowStream(nil)
 	stream.Write([]byte(`{"accounts":[`))
 	outFields := OutFields{Status: true, Fname: true, Sname: true,
 		Country: false}
 	for i, id := range uids {
-		outAccount(&outFields, &Accounts[id], stream)
+		outAccount(&outFields, HasAccount(id), stream)
 		if i != len(uids)-1 {
 			stream.WriteMore()
 		}
 	}
 	stream.Write([]byte(`]}`))
 	ctx.SetBody(stream.Buffer())
-	config.ReturnStream(stream)
+	jsonConfig.ReturnStream(stream)
 }
 
 func doRecommend(ctx *fasthttp.RequestCtx, iid int) {
@@ -1239,7 +1241,7 @@ func doRecommend(ctx *fasthttp.RequestCtx, iid int) {
 	bitmap.LoopMap(rmap, func(uids []int32) bool {
 		for _, uid := range uids {
 			cnt := interests.IntersectNew(&Interests[uid]).CountV()
-			othacc := &Accounts[uid]
+			othacc := HasAccount(uid)
 			recs.Add(othacc, int(cnt))
 		}
 		return true
@@ -1256,19 +1258,19 @@ func doRecommend(ctx *fasthttp.RequestCtx, iid int) {
 
 	ctx.SetStatusCode(200)
 	ctx.SetContentType("application/json")
-	stream := config.BorrowStream(nil)
+	stream := jsonConfig.BorrowStream(nil)
 	stream.Write([]byte(`{"accounts":[`))
 	outFields := OutFields{Status: true, Fname: true, Sname: true, Birth: true, Premium: true,
 		Country: false}
 	for i, id := range uids {
-		outAccount(&outFields, &Accounts[id], stream)
+		outAccount(&outFields, HasAccount(id), stream)
 		if i != len(uids)-1 {
 			stream.WriteMore()
 		}
 	}
 	stream.Write([]byte(`]}`))
 	ctx.SetBody(stream.Buffer())
-	config.ReturnStream(stream)
+	jsonConfig.ReturnStream(stream)
 }
 
 func outAccount(out *OutFields, acc *Account, stream *jsoniter.Stream) {
