@@ -219,10 +219,10 @@ func (ss *SomeStrings) Add(str string, uid int32) uint32 {
 	}
 
 	ss.Lock()
-	defer ss.Unlock()
 
 	ss.SetNull(uid, str == "")
 	if str == "" {
+		ss.Unlock()
 		return 0
 	}
 
@@ -235,6 +235,8 @@ func (ss *SomeStrings) Add(str string, uid int32) uint32 {
 		}
 	}
 	ss.Maps[ix-1].Set(uid)
+
+	ss.Unlock()
 	return ix
 }
 
@@ -270,4 +272,10 @@ func (ss *SomeStrings) GetMap(ix uint32) bitmap.IMutBitmap {
 		return nil
 	}
 	return ss.Maps[ix-1]
+}
+
+func (ss *SomeStrings) Unset(ix uint32, i int32) {
+	ss.Lock()
+	ss.GetMap(ix).Unset(i)
+	ss.Unlock()
 }

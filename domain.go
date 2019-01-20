@@ -59,6 +59,36 @@ type Account struct {
 	Likes         uintptr
 }
 
+type SmallAccount struct {
+	Birth            int32
+	City             uint16
+	Country          uint8
+	StatusSexPremium uint8
+}
+
+func (a *Account) SmallAccount() SmallAccount {
+	s := SmallAccount{City: a.City, Country: a.Country, StatusSexPremium: a.Status, Birth: a.Birth}
+	if a.Sex {
+		s.StatusSexPremium |= 4
+	}
+	if a.PremiumNow {
+		s.StatusSexPremium |= 8
+	}
+	return s
+}
+
+func (s SmallAccount) Status() int {
+	return int(s.StatusSexPremium & 3)
+}
+
+func (s SmallAccount) Sex() bool {
+	return s.StatusSexPremium&4 != 0
+}
+
+func (s SmallAccount) Premium() bool {
+	return s.StatusSexPremium&8 != 0
+}
+
 /*
 func (acc *Account) SetInterest(ix uint32) {
 	acc.Interests[ix/64] |= 1 << (ix & 63)
@@ -68,6 +98,7 @@ func (acc *Account) SetInterest(ix uint32) {
 const Init = 1536 * 1024
 
 var Accounts = make([]Account, Init)
+var SmallAccounts = make([]SmallAccount, Init)
 var Interests = make([]bitmap.Block, Init)
 var AccountsMap bitmap.Huge
 var MaxId int32
@@ -93,6 +124,7 @@ func SureAccount(i int32) *Account {
 			ln -= ln / 4
 		}
 		SureCapa(&Accounts, int(ln))
+		SureCapa(&SmallAccounts, int(ln))
 		SureCapa(&Interests, int(ln))
 	}
 	if i >= MaxId {
@@ -104,14 +136,6 @@ func SureAccount(i int32) *Account {
 	return acc
 }
 
-func SetInterest(i int32, ix int32) {
-	Interests[i].Set(ix)
-}
-
-func UnsetInterest(i int32, ix int32) {
-	Interests[i].Unset(ix)
-}
-
 func HasAccount(i int32) *Account {
 	if i >= MaxId {
 		return nil
@@ -120,6 +144,34 @@ func HasAccount(i int32) *Account {
 		return nil
 	}
 	return &Accounts[i]
+}
+
+func RefAccount(i int32) *Account {
+	return &Accounts[i]
+}
+
+func SetSmallAccount(i int32, s SmallAccount) {
+	SmallAccounts[i] = s
+}
+
+func GetSmallAccount(i int32) SmallAccount {
+	return SmallAccounts[i]
+}
+
+func GetInterest(i int32) bitmap.Block {
+	return Interests[i]
+}
+
+func SetInterest(i int32, ix int32) {
+	Interests[i].Set(ix)
+}
+
+func SetInterests(i int32, b bitmap.Block) {
+	Interests[i] = b
+}
+
+func UnsetInterest(i int32, ix int32) {
+	Interests[i].Unset(ix)
 }
 
 func DomainFromEmail(e string) string {
@@ -144,8 +196,18 @@ var ComplexMap = bitmap.Huge{}
 var FreeOrMeetingMap = bitmap.Huge{}
 var MeetingOrComplexMap = bitmap.Huge{}
 var FreeOrComplexMap = bitmap.Huge{}
+var StatusMaps = func() [4][3]*bitmap.Huge {
+	r := [4][3]*bitmap.Huge{
+		{},
+	}
+	r[StatusFreeIx] = [3]*bitmap.Huge{&FreeMap, &FreeOrMeetingMap, &FreeOrComplexMap}
+	r[StatusComplexIx] = [3]*bitmap.Huge{&ComplexMap, &FreeOrComplexMap, &MeetingOrComplexMap}
+	r[StatusMeetingIx] = [3]*bitmap.Huge{&MeetingMap, &FreeOrMeetingMap, &MeetingOrComplexMap}
+	return r
+}()
 
 var PremiumNow = bitmap.Huge{}
+var PremiumNotNow = bitmap.Huge{}
 var PremiumNull = bitmap.Huge{}
 var PremiumNotNull = bitmap.Huge{}
 
@@ -186,7 +248,7 @@ func GetBirthYear(ts int32) int32 {
 	return int32(time.Unix(int64(ts), 0).UTC().Year() - 1950)
 }
 
-var JoinYearIndexes [10]bitmap.Bitmap
+var JoinYearIndexes [10]bitmap.Huge
 
 func GetJoinYear(ts int32) int32 {
 	return int32(time.Unix(int64(ts), 0).UTC().Year() - 2011)

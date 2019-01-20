@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/funny-falcon/highloadcup2018/bitmap2"
@@ -19,16 +21,16 @@ func postHandler(ctx *fasthttp.RequestCtx, path []byte) {
 		if !doLikes(ctx) {
 			ctx.SetStatusCode(400)
 		}
-	/*
-		case bytes.HasSuffix(path, []byte("/")):
-			ids := path[:bytes.IndexByte(path, '/')]
-			id, err := strconv.Atoi(string(ids))
-			if err != nil {
-				ctx.SetStatusCode(400)
-				return
-			}
-			doUpdate(ctx, id)
-	*/
+	case bytes.HasSuffix(path, []byte("/")):
+		ids := path[:bytes.IndexByte(path, '/')]
+		id, err := strconv.Atoi(string(ids))
+		if err != nil {
+			ctx.SetStatusCode(404)
+			return
+		}
+		if !doUpdate(ctx, id) {
+			ctx.SetStatusCode(400)
+		}
 	default:
 		ctx.SetStatusCode(404)
 	}
@@ -56,52 +58,7 @@ func doNew(ctx *fasthttp.RequestCtx) bool {
 		logf("id is already used %d", accin.Id)
 		return false
 	}
-	if accin.Email == "" || len(accin.Email) > 100 {
-		logf("email is invalid %s", accin.Email)
-		return false
-	}
-	if len(accin.Phone) > 16 {
-		logf("phone is too long %s", accin.Phone)
-		return false
-	}
-	statusix, ok := GetStatusIx(accin.Status)
-	if !ok {
-		logf("status is not ok %s", statusix)
-		return false
-	}
-	if accin.Birth < unix1950 || accin.Birth > unix2005 {
-		logf("birth is not ok %d", accin.Birth)
-		return false
-	}
-	if accin.Sex != "m" && accin.Sex != "f" {
-		logf("sex is not ok %s", accin.Sex)
-		return false
-	}
-	if len(accin.Country) > 50 {
-		logf("to long country %s", accin.Country)
-		return false
-	}
-	if len(accin.City) > 50 {
-		logf("to long city %s", accin.Country)
-		return false
-	}
-	if len(accin.Fname) > 50 {
-		logf("too long fname %s", accin.Fname)
-		return false
-	}
-	if len(accin.Sname) > 50 {
-		logf("too long sname %s", accin.Fname)
-		return false
-	}
-	for _, int := range accin.Interests {
-		if int == "" || len(int) > 100 {
-			logf("invalid interest %s", int)
-			return false
-		}
-	}
-	if (accin.Premium.Start != 0 || accin.Premium.Finish != 0) &&
-		(accin.Premium.Start < unix2018 || accin.Premium.Finish < unix2018) {
-		logf("invalid premium %v", accin.Premium)
+	if !commonValidate(&accin, false) {
 		return false
 	}
 	otherMap := &MaleMap
@@ -111,13 +68,15 @@ func doNew(ctx *fasthttp.RequestCtx) bool {
 	for _, like := range accin.Likes {
 		if like.Ts < accin.Joined {
 			logf("like ts %d less than joined %d", like.Ts, accin.Joined)
-			return true
+			return false
 		}
 		if !AccountsMap.Has(like.Id) {
 			logf("user %d doesn't exists to be liked by %d", like.Id, accin.Id)
+			return false
 		}
 		if !otherMap.Has(like.Id) {
 			logf("user %d is not of other sex", like.Id, accin.Id)
+			return false
 		}
 	}
 	if !EmailIndex.IsFree(accin.Email) {
@@ -183,5 +142,112 @@ func doLikes(ctx *fasthttp.RequestCtx) bool {
 	logf("doLikes Looks to be ok")
 	ctx.SetStatusCode(202)
 	ctx.SetBody([]byte("{}"))
+	return true
+}
+
+func doUpdate(ctx *fasthttp.RequestCtx, id int) bool {
+	var accin AccountIn
+	iter := jsonConfig.BorrowIterator(ctx.PostBody())
+	iter.ReadVal(&accin)
+	if iter.Error != nil {
+		logf("doNew iter error: %v", iter.Error)
+		return false
+	}
+
+	if accin.Id != 0 {
+		logf("id should not be set in update")
+		return false
+	}
+	acc := HasAccount(int32(id))
+	if acc == nil {
+		logf("user is not found %d", accin.Id)
+		ctx.SetStatusCode(404)
+		return true
+	}
+	if !commonValidate(&accin, true) {
+		return false
+	}
+
+	if len(accin.Likes) != 0 {
+		logf("could not update likes")
+		return false
+	}
+
+	if !UpdateAccount(acc, &accin) {
+		return false
+	}
+
+	logf("doLikes Looks to be ok")
+	ctx.SetStatusCode(202)
+	ctx.SetBody([]byte("{}"))
+	return true
+}
+
+func commonValidate(accin *AccountIn, update bool) bool {
+	if (!update && accin.Email == "") || len(accin.Email) > 100 {
+		logf("email is invalid %s", accin.Email)
+		return false
+	}
+	if accin.Email != "" {
+		ixdog := strings.IndexByte(accin.Email, '@')
+		if ixdog == -1 {
+			logf("email has no @ %s", accin.Email)
+			return false
+		}
+		ixdot := strings.IndexByte(accin.Email[ixdog:], '.')
+		if ixdot == -1 || ixdog+ixdot > len(accin.Email)-2 {
+			logf("email has no . %s", accin.Email)
+			return false
+		}
+	}
+	if len(accin.Phone) > 16 {
+		logf("phone is too long %s", accin.Phone)
+		return false
+	}
+	_, ok := GetStatusIx(accin.Status)
+	if !ok && (!update || accin.Status != "") {
+		logf("status is not ok %s", accin.Status)
+		return false
+	}
+	if (accin.Birth < unix1950 || accin.Birth > unix2005) && (!update || accin.Birth != 0) {
+		logf("birth is not ok %d", accin.Birth)
+		return false
+	}
+	if (accin.Joined < unix2011 || accin.Joined > unix2018) && (!update || accin.Birth != 0) {
+		logf("birth is not ok %d", accin.Birth)
+		return false
+	}
+	if accin.Sex != "m" && accin.Sex != "f" && (!update || accin.Sex != "") {
+		logf("sex is not ok %s", accin.Sex)
+		return false
+	}
+	if len(accin.Country) > 50 {
+		logf("to long country %s", accin.Country)
+		return false
+	}
+	if len(accin.City) > 50 {
+		logf("to long city %s", accin.Country)
+		return false
+	}
+	if len(accin.Fname) > 50 {
+		logf("too long fname %s", accin.Fname)
+		return false
+	}
+	if len(accin.Sname) > 50 {
+		logf("too long sname %s", accin.Fname)
+		return false
+	}
+	for _, int := range accin.Interests {
+		if int == "" || len(int) > 100 {
+			logf("invalid interest %s", int)
+			return false
+		}
+	}
+	if (accin.Premium.Start != 0 || accin.Premium.Finish != 0) &&
+		(accin.Premium.Start < unix2018 || accin.Premium.Finish < unix2018) {
+		logf("invalid premium %v", accin.Premium)
+		return false
+	}
+
 	return true
 }

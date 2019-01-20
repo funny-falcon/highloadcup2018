@@ -202,19 +202,8 @@ func InsertAccount(accin *AccountIn) {
 	if !ok {
 		panic("status unknown " + accin.Status)
 	}
-	switch acc.Status {
-	case StatusFreeIx:
-		FreeMap.Set(acc.Uid)
-		FreeOrComplexMap.Set(acc.Uid)
-		FreeOrMeetingMap.Set(acc.Uid)
-	case StatusMeetingIx:
-		MeetingMap.Set(acc.Uid)
-		FreeOrMeetingMap.Set(acc.Uid)
-		MeetingOrComplexMap.Set(acc.Uid)
-	case StatusComplexIx:
-		ComplexMap.Set(acc.Uid)
-		FreeOrComplexMap.Set(acc.Uid)
-		MeetingOrComplexMap.Set(acc.Uid)
+	for _, mp := range StatusMaps[acc.Status] {
+		mp.Set(acc.Uid)
 	}
 	acc.Email, ok = EmailIndex.InsertUid(accin.Email, acc.Uid)
 	if !ok {
@@ -224,6 +213,7 @@ func InsertAccount(accin *AccountIn) {
 	domain := DomainFromEmail(accin.Email)
 	acc.Domain = uint8(DomainsStrings.Add(domain, acc.Uid))
 	IndexGtLtEmail(accin.Email, acc.Uid, true)
+
 	acc.Phone, ok = PhoneIndex.InsertUid(accin.Phone, acc.Uid)
 	if accin.Phone != "" {
 		if !ok {
@@ -232,9 +222,11 @@ func InsertAccount(accin *AccountIn) {
 		code := CodeFromPhone(accin.Phone)
 		acc.Code = uint8(PhoneCodesStrings.Add(code, acc.Uid))
 	}
+
 	acc.Fname = uint8(FnameStrings.Add(accin.Fname, acc.Uid))
 	acc.Sname = uint16(SnameStrings.Add(accin.Sname, acc.Uid))
 	SnameOnce.Reset()
+
 	acc.City = uint16(CityStrings.Add(accin.City, acc.Uid))
 	acc.Country = uint8(CountryStrings.Add(accin.Country, acc.Uid))
 	acc.PremiumStart = accin.Premium.Start
@@ -243,6 +235,8 @@ func InsertAccount(accin *AccountIn) {
 		acc.PremiumNow = accin.Premium.Start <= CurTs && accin.Premium.Finish > CurTs
 		if acc.PremiumNow {
 			PremiumNow.Set(acc.Uid)
+		} else {
+			PremiumNotNow.Set(acc.Uid)
 		}
 		PremiumNotNull.Set(acc.Uid)
 	} else {
@@ -262,10 +256,190 @@ func InsertAccount(accin *AccountIn) {
 	}
 	acc.Likes = likes.ForceAlloc()
 	likesImplPool.Put(smallImpl)
+	SetSmallAccount(acc.Uid, acc.SmallAccount())
 }
 
 var likesImplPool = sync.Pool{
 	New: func() interface{} { return &bitmap.SmallImpl{Cap: 256} },
+}
+
+func UpdateAccount(acc *Account, accin *AccountIn) bool {
+	oldEmail := EmailIndex.GetStr(acc.Email)
+	updateEmail := false
+	if accin.Email != "" && oldEmail != accin.Email {
+		if !EmailIndex.IsFree(accin.Email) {
+			logf("email is not free %s", accin.Email)
+			return false
+		}
+		updateEmail = true
+	}
+	oldPhone := PhoneIndex.GetStr(acc.Phone)
+	updatePhone := false
+	if accin.Phone != "" && oldPhone != accin.Phone {
+		if accin.Phone != "" && !PhoneIndex.IsFree(accin.Phone) {
+			logf("phone is not free %s", accin.Phone)
+			return false
+		}
+		updatePhone = true
+	}
+
+	var ok bool
+	if updateEmail {
+		EmailIndex.ResetUser(acc.Email, acc.Uid)
+		DomainsStrings.Unset(uint32(acc.Domain), acc.Uid)
+		IndexGtLtEmail(oldEmail, acc.Uid, false)
+
+		acc.Email, ok = EmailIndex.InsertUid(accin.Email, acc.Uid)
+		if !ok {
+			panic("email is not unique " + accin.Email)
+		}
+
+		acc.EmailStart = GetEmailStart(accin.Email)
+		domain := DomainFromEmail(accin.Email)
+		acc.Domain = uint8(DomainsStrings.Add(domain, acc.Uid))
+		IndexGtLtEmail(accin.Email, acc.Uid, true)
+	}
+	if updatePhone {
+		if acc.Phone != 0 {
+			PhoneIndex.ResetUser(acc.Phone, acc.Uid)
+			PhoneCodesStrings.Unset(uint32(acc.Code), acc.Uid)
+		}
+
+		acc.Phone, ok = PhoneIndex.InsertUid(accin.Phone, acc.Uid)
+		if !ok {
+			panic("phone is not unique " + accin.Phone)
+		}
+
+		code := CodeFromPhone(accin.Phone)
+		acc.Code = uint8(PhoneCodesStrings.Add(code, acc.Uid))
+	}
+
+	if accin.Birth != 0 {
+		byear := GetBirthYear(acc.Birth)
+		nbyear := GetBirthYear(accin.Birth)
+		if byear != nbyear {
+			BirthYearIndexes[byear].Unset(acc.Uid)
+			BirthYearIndexes[nbyear].Set(acc.Uid)
+			acc.Birth = accin.Birth
+		}
+	}
+
+	if accin.Joined != 0 {
+		jyear := GetJoinYear(acc.Joined)
+		njyear := GetJoinYear(accin.Joined)
+		if njyear != jyear {
+			JoinYearIndexes[jyear].Unset(acc.Uid)
+			JoinYearIndexes[njyear].Set(acc.Uid)
+			acc.Joined = accin.Joined
+		}
+	}
+
+	if accin.Country != "" {
+		oldCountry := CountryStrings.GetStr(uint32(acc.Country))
+		if oldCountry != accin.Country {
+			if acc.Country != 0 {
+				CountryStrings.Unset(uint32(acc.Country), acc.Uid)
+			}
+			acc.Country = uint8(CountryStrings.Add(accin.Country, acc.Uid))
+		}
+	}
+
+	if accin.City != "" {
+		oldCity := CityStrings.GetStr(uint32(acc.City))
+		if oldCity != accin.City {
+			if acc.City != 0 {
+				CityStrings.Unset(uint32(acc.City), acc.Uid)
+			}
+			acc.City = uint16(CityStrings.Add(accin.City, acc.Uid))
+		}
+	}
+
+	if accin.Premium.Finish != 0 {
+		newPremiumNow := accin.Premium.Start <= CurTs && accin.Premium.Finish > CurTs
+		if newPremiumNow != acc.PremiumNow {
+			if acc.PremiumNow {
+				PremiumNotNow.Set(acc.Uid)
+				PremiumNow.Unset(acc.Uid)
+			} else {
+				PremiumNow.Set(acc.Uid)
+				PremiumNotNow.Unset(acc.Uid)
+			}
+		}
+		acc.PremiumStart = accin.Premium.Start
+		acc.PremiumLength = GetPremiumLength(accin.Premium.Start, accin.Premium.Finish)
+		acc.PremiumNow = accin.Premium.Start <= CurTs && accin.Premium.Finish > CurTs
+		PremiumNotNull.Set(acc.Uid)
+		PremiumNull.Unset(acc.Uid)
+	}
+
+	if accin.Fname != "" {
+		oldFname := FnameStrings.GetStr(uint32(acc.Fname))
+		if oldFname != accin.Fname {
+			if acc.Fname != 0 {
+				FnameStrings.Unset(uint32(acc.Fname), acc.Uid)
+			}
+			acc.Fname = uint8(FnameStrings.Add(accin.Fname, acc.Uid))
+		}
+	}
+
+	if accin.Sname != "" {
+		oldSname := SnameStrings.GetStr(uint32(acc.Sname))
+		if oldSname != accin.Sname {
+			if acc.Sname != 0 {
+				SnameStrings.Unset(uint32(acc.Sname), acc.Uid)
+			}
+			acc.Sname = uint16(SnameStrings.Add(accin.Sname, acc.Uid))
+		}
+		SnameOnce.Reset()
+	}
+
+	if accin.Sex != "" {
+		newSex := accin.Sex == "f"
+		if newSex != acc.Sex {
+			if acc.Sex {
+				MaleMap.Unset(acc.Uid)
+				FemaleMap.Set(acc.Uid)
+			} else {
+				MaleMap.Set(acc.Uid)
+				FemaleMap.Unset(acc.Uid)
+			}
+			acc.Sex = newSex
+		}
+	}
+
+	if accin.Status != "" {
+		newStatus, _ := GetStatusIx(accin.Status)
+		if newStatus != acc.Status {
+			for _, mp := range StatusMaps[acc.Status] {
+				mp.Unset(acc.Uid)
+			}
+			for _, mp := range StatusMaps[newStatus] {
+				mp.Set(acc.Uid)
+			}
+			acc.Status = newStatus
+		}
+	}
+
+	if len(accin.Interests) > 0 {
+		var newIntersets bitmap.Block
+		for _, interest := range accin.Interests {
+			ix := InterestStrings.Add(interest, acc.Uid)
+			newIntersets.Set(int32(ix - 1))
+		}
+		oldInterests := GetInterest(acc.Uid)
+
+		var ids bitmap.BlockUnroll
+		remove := oldInterests.RemoveNew(&newIntersets)
+		for _, ix := range remove.Unroll(0, &ids) {
+			InterestStrings.Unset(uint32(ix+1), acc.Uid)
+		}
+
+		SetInterests(acc.Uid, newIntersets)
+	}
+
+	SetSmallAccount(acc.Uid, acc.SmallAccount())
+
+	return true
 }
 
 /*

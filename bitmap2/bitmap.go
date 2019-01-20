@@ -1,6 +1,9 @@
 package bitmap2
 
-import "sync"
+import (
+	"sync"
+	"unsafe"
+)
 
 type IMutBitmap interface {
 	Set(id int32)
@@ -238,27 +241,38 @@ type BitmapIterator struct {
 	Bl Block
 }
 
+func dSpan(p uintptr) *BitmapSpan {
+	return (*BitmapSpan)(unsafe.Pointer(p))
+}
+
 func (bi *BitmapIterator) FetchAndNext(span int32) (*Block, int32) {
 	bigspan := uint8(span >> 16)
 	B := bi.B.B
-	for ; bi.Sp < len(B) && B[bi.Sp].Span > bigspan; bi.Sp++ {
-		bi.Ix = 0
-	}
-	if bi.Sp >= len(B) {
-		return &ZeroBlock, NoNext
-	} else if B[bi.Sp].Span < bigspan {
-		return &ZeroBlock, B[bi.Sp].LastSpan()
-	}
-	bl, ix := B[bi.Sp].FetchAndNext(&bi.Bl, uint16(span&^BlockMask), bi.Ix)
-	if ix == -1 {
+	l := len(B)
+	ptr := uintptr(unsafe.Pointer(&B[bi.Sp]))
+	for bi.Sp < l && dSpan(ptr).Span > bigspan {
+		ptr += unsafe.Sizeof(BitmapSpan{})
 		bi.Sp++
 		bi.Ix = 0
-		if bi.Sp >= len(B) {
+	}
+	Sp := dSpan(ptr)
+
+	if bi.Sp >= l {
+		return &ZeroBlock, NoNext
+	} else if Sp.Span < bigspan {
+		return &ZeroBlock, Sp.LastSpan()
+	}
+	bl, ix := Sp.FetchAndNext(&bi.Bl, uint16(span&^BlockMask), bi.Ix)
+	if ix == -1 {
+		bi.Sp++
+		ptr += unsafe.Sizeof(BitmapSpan{})
+		bi.Ix = 0
+		if bi.Sp >= l {
 			return bl, NoNext
 		}
-		return bl, B[bi.Sp].LastSpan()
+		return bl, dSpan(ptr).LastSpan()
 	} else {
 		bi.Ix = ix
-		return bl, B[bi.Sp].GetSpan(ix)
+		return bl, Sp.GetSpan(ix)
 	}
 }

@@ -8,19 +8,20 @@ type Recommends struct {
 }
 
 type RecElem struct {
-	*Account
-	Commons int
+	SmallAccount
+	Uid     int32
+	Commons uint32
 }
 
-func (r *Recommends) Add(acc *Account, common int) {
-	el := RecElem{acc, common}
+func (r *Recommends) Add(acc SmallAccount, uid int32, common uint32) {
+	el := RecElem{acc, uid, common}
 	if len(r.Accs) < r.Limit {
 		r.Accs = append(r.Accs, el)
 		if len(r.Accs) == r.Limit {
 			r.Heapify()
 		}
 	} else if r.LessAcc(r.Accs[0], el) {
-		r.Accs[0] = RecElem{acc, common}
+		r.Accs[0] = el
 		r.SiftUp(0)
 	}
 }
@@ -44,11 +45,11 @@ var recStatus = func() [4]uint8 {
 }()
 
 func (r *Recommends) LessAcc(acci, accj RecElem) bool {
-	if acci.PremiumNow != accj.PremiumNow {
-		return accj.PremiumNow
+	if acci.Premium() != accj.Premium() {
+		return accj.Premium()
 	}
-	if recStatus[acci.Status] != recStatus[accj.Status] {
-		return recStatus[acci.Status] < recStatus[accj.Status]
+	if recStatus[acci.Status()] != recStatus[accj.Status()] {
+		return recStatus[acci.Status()] < recStatus[accj.Status()]
 	}
 	if acci.Commons != accj.Commons {
 		return acci.Commons < accj.Commons

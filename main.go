@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
+	"runtime/pprof"
 
 	"github.com/valyala/fasthttp"
 )
@@ -42,6 +44,21 @@ func handler(ctx *fasthttp.RequestCtx) {
 	meth := ctx.Method()
 	path := ctx.Path()
 	if !bytes.HasPrefix(path, []byte("/accounts/")) {
+		if bytes.Equal(path, []byte("/start_profile")) {
+			fileName := string(ctx.QueryArgs().Peek("file"))
+			if fileName == "" {
+				fileName = "cpu.out"
+			}
+			f, err := os.Create(fileName)
+			if err != nil {
+				log.Fatal("could not create CPU profile: ", err)
+			}
+			if err := pprof.StartCPUProfile(f); err != nil {
+				log.Fatal("could not start CPU profile: ", err)
+			}
+		} else if bytes.Equal(path, []byte("/stop_profile")) {
+			pprof.StopCPUProfile()
+		}
 		ctx.SetStatusCode(400)
 		return
 	}

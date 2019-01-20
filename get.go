@@ -53,6 +53,8 @@ type OutFields struct {
 	Birth   bool
 	Joined  bool
 	Premium bool
+
+	PremiumNow bool
 }
 
 var EmptyFilterRes = []byte(`{"accounts":[]}`)
@@ -473,7 +475,7 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 	if filter == nil {
 		bitmap.LoopMap(iterator, func(uids []int32) bool {
 			for _, uid := range uids {
-				resAccs = append(resAccs, HasAccount(uid))
+				resAccs = append(resAccs, RefAccount(uid))
 				if len(resAccs) == limit {
 					return false
 				}
@@ -483,7 +485,7 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 	} else {
 		bitmap.LoopMap(iterator, func(uids []int32) bool {
 			for _, uid := range uids {
-				acc := HasAccount(uid)
+				acc := RefAccount(uid)
 				if !filter(acc) {
 					continue
 				}
@@ -740,7 +742,8 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 			bitmap.LoopMap(iterator, func(u []int32) bool {
 				for _, uid := range u {
 					//Accounts[uid].Interests.UnrollCount(&counts)
-					Interests[uid].UnrollCount(&counts)
+					int := GetInterest(uid)
+					int.UnrollCount(&counts)
 				}
 				return true
 			})
@@ -833,18 +836,18 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 			mapper := func(u []int32) bool {
 				for _, uid := range u {
 					k := 0
-					acc := HasAccount(uid)
+					acc := GetSmallAccount(uid)
 					if groupBy&GroupByCity != 0 {
 						k = int(acc.City) * cityMult
 					} else if groupBy&GroupByCountry != 0 {
 						k = int(acc.Country) * cityMult
 					}
 					if cityMult == 2 {
-						if acc.Sex {
+						if acc.Sex() {
 							k++
 						}
 					} else if cityMult == 3 {
-						k += int(acc.Status) - 1
+						k += int(acc.Status()) - 1
 					}
 					groups[k].s++
 
@@ -984,9 +987,9 @@ func doSuggest(ctx *fasthttp.RequestCtx, iid int) {
 			}
 			if filter != nil {
 				old := filter
-				filter = func(uid int32) bool { return old(uid) && uint32(HasAccount(uid).Country) == ix }
+				filter = func(uid int32) bool { return old(uid) && uint32(RefAccount(uid).Country) == ix }
 			} else {
-				filter = func(uid int32) bool { return uint32(HasAccount(uid).Country) == ix }
+				filter = func(uid int32) bool { return uint32(RefAccount(uid).Country) == ix }
 			}
 			//iterators = append(iterators, CountryStrings.GetMap(ix))
 		case "city":
@@ -1002,9 +1005,9 @@ func doSuggest(ctx *fasthttp.RequestCtx, iid int) {
 			}
 			if filter != nil {
 				old := filter
-				filter = func(uid int32) bool { return old(uid) && uint32(HasAccount(uid).City) == ix }
+				filter = func(uid int32) bool { return old(uid) && uint32(RefAccount(uid).City) == ix }
 			} else {
-				filter = func(uid int32) bool { return uint32(HasAccount(uid).City) == ix }
+				filter = func(uid int32) bool { return uint32(RefAccount(uid).City) == ix }
 			}
 			//iterators = append(iterators, CityStrings.GetMap(ix))
 		case "query_id":
@@ -1098,7 +1101,7 @@ func doSuggest(ctx *fasthttp.RequestCtx, iid int) {
 Outter:
 	for len(groups) > 0 {
 		cnt := groups[0]
-		osmall := bitmap.GetSmall(&HasAccount(int32(cnt.u)).Likes)
+		osmall := bitmap.GetSmall(&RefAccount(int32(cnt.u)).Likes)
 		//logf("osmall %d %v", osmall.Size, osmall.Data[:osmall.Size])
 		for _, oid := range osmall.Data[:osmall.Size] {
 			//logf("osmall oid %d", oid)
@@ -1126,7 +1129,7 @@ Outter:
 	outFields := OutFields{Status: true, Fname: true, Sname: true,
 		Country: false}
 	for i, id := range uids {
-		outAccount(&outFields, HasAccount(id), stream)
+		outAccount(&outFields, RefAccount(id), stream)
 		if i != len(uids)-1 {
 			stream.WriteMore()
 		}
@@ -1221,17 +1224,16 @@ func doRecommend(ctx *fasthttp.RequestCtx, iid int) {
 		maps = append(maps, &MaleMap)
 	}
 
-	rmap := bitmap.NewAndBitmap(maps)
-
 	var intIdsH bitmap.BlockUnroll
-	interests := Interests[id]
+	interests := GetInterest(id)
 	intIds := interests.Unroll(0, &intIdsH)
-	maps = make([]bitmap.IBitmap, len(intIds))
+	ormaps := make([]bitmap.IBitmap, len(intIds))
 	for i, ii := range intIds {
-		maps[i] = InterestStrings.Maps[ii]
+		ormaps[i] = InterestStrings.Maps[ii]
 	}
+	maps = append(maps, bitmap.NewOrBitmap(ormaps))
 
-	rmap = bitmap.NewAndBitmap([]bitmap.IBitmap{rmap, bitmap.NewOrBitmap(maps)})
+	rmap := bitmap.NewAndBitmap(maps)
 
 	recs := Recommends{
 		Birth: acc.Birth,
@@ -1241,8 +1243,8 @@ func doRecommend(ctx *fasthttp.RequestCtx, iid int) {
 	bitmap.LoopMap(rmap, func(uids []int32) bool {
 		for _, uid := range uids {
 			cnt := interests.IntersectNew(&Interests[uid]).CountV()
-			othacc := HasAccount(uid)
-			recs.Add(othacc, int(cnt))
+			othacc := GetSmallAccount(uid)
+			recs.Add(othacc, uid, cnt)
 		}
 		return true
 	})
@@ -1260,10 +1262,11 @@ func doRecommend(ctx *fasthttp.RequestCtx, iid int) {
 	ctx.SetContentType("application/json")
 	stream := jsonConfig.BorrowStream(nil)
 	stream.Write([]byte(`{"accounts":[`))
-	outFields := OutFields{Status: true, Fname: true, Sname: true, Birth: true, Premium: true,
+	outFields := OutFields{Status: true, Fname: true, Sname: true, Birth: true,
+		Premium: true,
 		Country: false}
 	for i, id := range uids {
-		outAccount(&outFields, HasAccount(id), stream)
+		outAccount(&outFields, RefAccount(id), stream)
 		if i != len(uids)-1 {
 			stream.WriteMore()
 		}

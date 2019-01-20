@@ -57,6 +57,10 @@ func (b *Block) IntersectNew(o *Block) Block {
 	return Block{b[0] & o[0], b[1] & o[1]}
 }
 
+func (b *Block) RemoveNew(o *Block) Block {
+	return Block{b[0] &^ o[0], b[1] &^ o[1]}
+}
+
 func (b *Block) Union(o *Block) {
 	b[0] |= o[0]
 	b[1] |= o[1]
