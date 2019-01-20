@@ -91,8 +91,20 @@ func Load() {
 	}
 	defer rdr.Close()
 	debug.SetGCPercent(5)
-	for nf, f := range rdr.File {
-		func() {
+	sema := make(chan int, 3)
+	var wg sync.WaitGroup
+	var compactMtx sync.RWMutex
+	for _nf, _f := range rdr.File {
+		wg.Add(1)
+		nf, f := _nf, _f
+		go func() {
+			sema <- 1
+			compactMtx.RLock()
+			defer func() {
+				compactMtx.RUnlock()
+				<-sema
+				wg.Done()
+			}()
 			rc, err := f.Open()
 			if err != nil {
 				log.Fatal(err)
@@ -117,16 +129,15 @@ func Load() {
 				log.Fatal("Error reading accounts: ", iter.Error)
 			}
 			if (nf+1)%2 == 0 {
+				compactMtx.RUnlock()
+				compactMtx.Lock()
 				Compact()
+				compactMtx.Unlock()
+				compactMtx.RLock()
 			}
-			/*
-				switch nf {
-				case 40:
-					debug.SetGCPercent(10)
-				}
-			*/
 		}()
 	}
+	wg.Wait()
 	debug.SetGCPercent(20)
 
 	fmt.Println("LikesAlloc ", bitmap.LikesAlloc.TotalAlloc, bitmap.LikesAlloc.TotalFree,
@@ -240,6 +251,7 @@ func InsertAccount(accin *AccountIn) {
 		}
 		PremiumNotNull.Set(acc.Uid)
 	} else {
+		PremiumNotNow.Set(acc.Uid)
 		PremiumNull.Set(acc.Uid)
 	}
 	for _, interest := range accin.Interests {
