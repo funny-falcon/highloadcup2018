@@ -1,15 +1,14 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"runtime/pprof"
-
-	"github.com/valyala/fasthttp"
+	"strconv"
+	"strings"
 )
 
 //var datazip = flag.String("data", "/tmp/data/data.zip", "data file")
@@ -32,20 +31,26 @@ func main() {
 		return
 	}
 
-	err := fasthttp.ListenAndServe(":"+*port, handler)
-	if err != nil {
-		log.Fatal(err)
-	}
+	prt, _ := strconv.Atoi(*port)
+	Acceptor(prt)
+
+	/*
+		err := fasthttp.ListenAndServe(":"+*port, handler)
+		if err != nil {
+			log.Fatal(err)
+		}
+	*/
 }
 
 var GET = []byte("GET")
 
-func handler(ctx *fasthttp.RequestCtx) {
-	meth := ctx.Method()
-	path := ctx.Path()
-	if !bytes.HasPrefix(path, []byte("/accounts/")) {
-		if bytes.Equal(path, []byte("/start_profile")) {
-			fileName := string(ctx.QueryArgs().Peek("file"))
+func myHandler(ctx *Request) error {
+	meth := ctx.Method
+	path := ctx.Path
+	logf("Method: %s Path: %s, args: %s", meth, path, ctx.Args)
+	if !strings.HasPrefix(path, "/accounts/") {
+		if path == "/start_profile" {
+			fileName := ctx.GetArg("file")
 			if fileName == "" {
 				fileName = "cpu.out"
 			}
@@ -56,21 +61,32 @@ func handler(ctx *fasthttp.RequestCtx) {
 			if err := pprof.StartCPUProfile(f); err != nil {
 				log.Fatal("could not start CPU profile: ", err)
 			}
-		} else if bytes.Equal(path, []byte("/stop_profile")) {
+		} else if path == "/stop_profile" {
 			pprof.StopCPUProfile()
+		} else if path == "/test" {
+			ctx.SetStatusCode(200)
+			ctx.SetBody([]byte("{}"))
+			return nil
 		}
 		ctx.SetStatusCode(400)
-		return
+		return nil
 	}
-	logf("Method: %s Path: %s, args: %s", meth, path, ctx.QueryArgs())
-	switch {
-	case ctx.IsGet():
+	switch meth {
+	case "GET":
 		getHandler(ctx, path[10:])
-	case ctx.IsPost():
+	case "POST":
 		postHandler(ctx, path[10:])
 	}
+	return nil
 }
 
-func logf(format string, args ...interface{}) {
-	//log.Printf(format, args...)
+var logf = func(string, ...interface{}) {}
+
+//var logf = log.Printf
+
+/*
+func myHandler(req *Request) error {
+	req.SetStatusCode(200)
+	return nil
 }
+*/

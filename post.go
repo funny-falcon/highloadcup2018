@@ -1,28 +1,25 @@
 package main
 
 import (
-	"bytes"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/funny-falcon/highloadcup2018/bitmap2"
-	"github.com/valyala/fasthttp"
 )
 
-func postHandler(ctx *fasthttp.RequestCtx, path []byte) {
-	logf("post Path: %s, args: %s", path, ctx.QueryArgs())
+func postHandler(ctx *Request, path string) {
 	switch {
-	case bytes.Equal(path, []byte("new/")):
+	case path == "new/":
 		if !doNew(ctx) {
 			ctx.SetStatusCode(400)
 		}
-	case bytes.Equal(path, []byte("likes/")):
+	case path == "likes/":
 		if !doLikes(ctx) {
 			ctx.SetStatusCode(400)
 		}
-	case bytes.HasSuffix(path, []byte("/")):
-		ids := path[:bytes.IndexByte(path, '/')]
+	case strings.HasSuffix(path, "/"):
+		ids := path[:len(path)-1]
 		id, err := strconv.Atoi(string(ids))
 		if err != nil {
 			ctx.SetStatusCode(404)
@@ -41,9 +38,9 @@ var unix2005 = int32(time.Date(2005, 1, 1, 0, 0, 0, 0, time.UTC).Unix())
 var unix2011 = int32(time.Date(2011, 1, 1, 0, 0, 0, 0, time.UTC).Unix())
 var unix2018 = int32(time.Date(2018, 1, 1, 0, 0, 0, 0, time.UTC).Unix())
 
-func doNew(ctx *fasthttp.RequestCtx) bool {
+func doNew(ctx *Request) bool {
 	var accin AccountIn
-	iter := jsonConfig.BorrowIterator(ctx.PostBody())
+	iter := jsonConfig.BorrowIterator(ctx.Body)
 	iter.ReadVal(&accin)
 	if iter.Error != nil {
 		logf("doNew iter error: %v", iter.Error)
@@ -100,8 +97,8 @@ type DoLike struct {
 	Ts    int32
 }
 
-func doLikes(ctx *fasthttp.RequestCtx) bool {
-	iter := jsonConfig.BorrowIterator(ctx.PostBody())
+func doLikes(ctx *Request) bool {
+	iter := jsonConfig.BorrowIterator(ctx.Body)
 	defer jsonConfig.ReturnIterator(iter)
 	if attr := iter.ReadObject(); attr != "likes" {
 		logf("likes doesn't likes")
@@ -145,9 +142,9 @@ func doLikes(ctx *fasthttp.RequestCtx) bool {
 	return true
 }
 
-func doUpdate(ctx *fasthttp.RequestCtx, id int) bool {
+func doUpdate(ctx *Request, id int) bool {
 	var accin AccountIn
-	iter := jsonConfig.BorrowIterator(ctx.PostBody())
+	iter := jsonConfig.BorrowIterator(ctx.Body)
 	iter.ReadVal(&accin)
 	if iter.Error != nil {
 		logf("doNew iter error: %v", iter.Error)

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"math/bits"
 	"strconv"
 	"strings"
@@ -9,27 +8,24 @@ import (
 	jsoniter "github.com/json-iterator/go"
 
 	bitmap "github.com/funny-falcon/highloadcup2018/bitmap2"
-
-	"github.com/valyala/fasthttp"
 )
 
-func getHandler(ctx *fasthttp.RequestCtx, path []byte) {
-	logf("ctx.Path: %s, args: %s", path, ctx.QueryArgs())
+func getHandler(ctx *Request, path string) {
 	switch {
-	case bytes.Equal(path, []byte("filter/")):
+	case path == "filter/":
 		doFilter(ctx)
-	case bytes.Equal(path, []byte("group/")):
+	case path == "group/":
 		doGroup(ctx)
-	case bytes.HasSuffix(path, []byte("/suggest/")):
-		ids := path[:bytes.IndexByte(path, '/')]
-		id, err := strconv.Atoi(string(ids))
+	case strings.HasSuffix(path, "/suggest/"):
+		ids := path[:strings.IndexByte(path, '/')]
+		id, err := strconv.Atoi(ids)
 		if err != nil {
 			ctx.SetStatusCode(400)
 			return
 		}
 		doSuggest(ctx, id)
-	case bytes.HasSuffix(path, []byte("/recommend/")):
-		ids := path[:bytes.IndexByte(path, '/')]
+	case strings.HasSuffix(path, "/recommend/"):
+		ids := path[:strings.IndexByte(path, '/')]
 		id, err := strconv.Atoi(string(ids))
 		if err != nil {
 			ctx.SetStatusCode(400)
@@ -60,8 +56,7 @@ type OutFields struct {
 var EmptyFilterRes = []byte(`{"accounts":[]}`)
 var EmptyGroupRes = []byte(`{"groups":[]}`)
 
-func doFilter(ctx *fasthttp.RequestCtx) {
-	args := ctx.QueryArgs()
+func doFilter(ctx *Request) {
 	maps := make([]bitmap.IBitmap, 0, 4)
 	filters := []func(*Account) bool{}
 
@@ -70,387 +65,393 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 	limit := -1
 	var outFields OutFields
 
-	args.VisitAll(func(key []byte, val []byte) {
-		if !correct {
-			return
-		}
-		logf("arg %s: %s", key, val)
-		if bytes.Equal(key, []byte("limit")) {
-			var err error
-			limit, err = strconv.Atoi(string(val))
-			if err != nil || limit == 0 {
-				logf("limit: %s", err)
-				correct = false
-			}
-			return
-		}
-		skey := string(key)
-		sval := string(val)
-		switch skey {
-		case "sex_eq":
-			outFields.Sex = true
-			switch sval {
-			case "m":
-				maps = append(maps, &MaleMap)
-			case "f":
-				maps = append(maps, &FemaleMap)
-			default:
-				logf("sex_eq incorrect")
-				correct = false
-			}
-		case "email_domain":
-			domain := sval
-			ix := DomainsStrings.Find(domain)
-			if ix == 0 {
-				emptyRes = true
+	for _, kv := range ctx.Args {
+		key, val := kv.k, kv.v
+		func() {
+			if !correct {
 				return
 			}
-			iterator := DomainsStrings.GetMap(ix)
-			maps = append(maps, iterator)
-		case "email_gt":
-			if len(val) == 0 {
-				return // all are greater
-			}
-			email := sval
-			emailgt := GetEmailPrefix(email)
-			filters = append(filters, func(acc *Account) bool {
-				return acc.EmailStart >= emailgt
-			})
-			if len(email) > 4 {
-				filters = append(filters, func(acc *Account) bool {
-					accEmail := EmailIndex.GetStr(acc.Email)
-					return accEmail > email
-				})
-			}
-			chix := int(email[0]) - 'a'
-			if chix < 0 {
-				return
-			} else if chix > 25 {
-				chix = 25
-			}
-			maps = append(maps, &EmailGtIndexes[chix])
-		case "email_lt":
-			if len(val) == 0 {
-				emptyRes = true
-				return // all are greater
-			}
-			email := sval
-			emaillt := GetEmailPrefix(email)
-			logf("emaillt %08x", emaillt)
-			filters = append(filters, func(acc *Account) bool {
-				logf("EmailStart %08x", acc.EmailStart)
-				return acc.EmailStart < emaillt
-			})
-			if len(email) > 4 {
-				filters = append(filters, func(acc *Account) bool {
-					accEmail := EmailIndex.GetStr(acc.Email)
-					return accEmail < email
-				})
-			}
-			chix := int(email[0]) - 'a'
-			if chix < 0 {
-				chix = 0
-			} else if chix > 25 {
-				return
-			}
-			maps = append(maps, &EmailLtIndexes[chix])
-		case "status_eq":
-			outFields.Status = true
-			switch sval {
-			case StatusFree:
-				maps = append(maps, &FreeMap)
-			case StatusMeeting:
-				maps = append(maps, &MeetingMap)
-			case StatusComplex:
-				maps = append(maps, &ComplexMap)
-			default:
-				logf("status_eq incorrect")
-				correct = false
-				return
-			}
-		case "status_neq":
-			outFields.Status = true
-			switch sval {
-			case StatusFree:
-				maps = append(maps, &MeetingOrComplexMap)
-			case StatusMeeting:
-				maps = append(maps, &FreeOrComplexMap)
-			case StatusComplex:
-				maps = append(maps, &FreeOrMeetingMap)
-			default:
-				logf("status_neq incorrect")
-				correct = false
-				return
-			}
-		case "fname_eq":
-			outFields.Fname = true
-			ix := FnameStrings.Find(sval)
-			if ix == 0 {
-				emptyRes = true
-				return
-			}
-			maps = append(maps, FnameStrings.GetMap(ix))
-		case "fname_any":
-			outFields.Fname = true
-			names := strings.Split(sval, ",")
-			orIters := make([]bitmap.IBitmap, 0, len(names))
-			for _, name := range names {
-				ix := FnameStrings.Find(name)
-				if ix == 0 {
-					continue
+			logf("arg %s: %s", key, val)
+			if key == "limit" {
+				var err error
+				limit, err = strconv.Atoi(string(val))
+				if err != nil || limit == 0 {
+					logf("limit: %s", err)
+					correct = false
 				}
-				orIters = append(orIters, FnameStrings.GetMap(ix))
-			}
-			if len(orIters) == 0 {
-				emptyRes = true
 				return
 			}
-			maps = append(maps, bitmap.NewOrBitmap(orIters))
-		case "fname_null":
-			outFields.Fname = true
-			switch sval {
-			case "1":
-				maps = append(maps, &FnameStrings.Null)
-			case "0":
-				maps = append(maps, &FnameStrings.NotNull)
-				/*
-					filters = append(filters, func(acc *Account) bool {
-						return acc.Fname != 0
-					})
-				*/
-			default:
-				logf("fname_null incorrect")
-				correct = false
-			}
-		case "sname_eq":
-			outFields.Sname = true
-			ix := SnameStrings.Find(sval)
-			if ix == 0 {
-				emptyRes = true
-				return
-			}
-			maps = append(maps, SnameStrings.GetMap(ix))
-		case "sname_starts":
-			outFields.Sname = true
-			SnameOnce.Sure()
-			pref := sval
-			i, j := SnameSorted.PrefixRange(pref)
-			if i == j {
-				emptyRes = true
-				return
-			}
-			orIters := make([]bitmap.IBitmap, j-i)
-			for k := i; k < j; k++ {
-				orIters[k-i] = SnameStrings.GetMap(SnameSorted.Ix[k])
-			}
-			maps = append(maps, bitmap.NewOrBitmap(orIters))
-		case "sname_null":
-			outFields.Sname = true
-			switch sval {
-			case "1":
-				maps = append(maps, &SnameStrings.Null)
-			case "0":
-				maps = append(maps, &SnameStrings.NotNull)
-				/*
-					filters = append(filters, func(acc *Account) bool {
-						return acc.Sname != 0
-					})
-				*/
-			default:
-				logf("sname_null incorrect")
-				correct = false
-			}
-		case "phone_code":
-			outFields.Phone = true
-			code := sval
-			ix := PhoneCodesStrings.Find(code)
-			if ix == 0 {
-				emptyRes = true
-				return
-			}
-			maps = append(maps, PhoneCodesStrings.GetMap(ix))
-		case "phone_null":
-			outFields.Phone = true
-			switch sval {
-			case "1":
-				maps = append(maps, &PhoneIndex.Null)
-			case "0":
-				maps = append(maps, &PhoneIndex.NotNull)
-			default:
-				logf("phone_null incorrect")
-				correct = false
-			}
-		case "country_eq":
-			outFields.Country = true
-			ix := CountryStrings.Find(sval)
-			if ix == 0 {
-				emptyRes = true
-				return
-			}
-			maps = append(maps, CountryStrings.GetMap(ix))
-		case "country_null":
-			outFields.Country = true
-			switch sval {
-			case "1":
-				maps = append(maps, &CountryStrings.Null)
-			case "0":
-				maps = append(maps, &CountryStrings.NotNull)
-			default:
-				logf("country_null incorrect")
-				correct = false
-			}
-		case "city_eq":
-			outFields.City = true
-			ix := CityStrings.Find(sval)
-			if ix == 0 {
-				emptyRes = true
-				return
-			}
-			maps = append(maps, CityStrings.GetMap(ix))
-		case "city_any":
-			outFields.City = true
-			cities := strings.Split(sval, ",")
-			orIters := make([]bitmap.IBitmap, 0, len(cities))
-			for _, name := range cities {
-				ix := CityStrings.Find(name)
-				if ix == 0 {
-					continue
+			skey := string(key)
+			sval := string(val)
+			switch skey {
+			case "sex_eq":
+				outFields.Sex = true
+				switch sval {
+				case "m":
+					maps = append(maps, &MaleMap)
+				case "f":
+					maps = append(maps, &FemaleMap)
+				default:
+					logf("sex_eq incorrect")
+					correct = false
 				}
-				orIters = append(orIters, CityStrings.GetMap(ix))
-			}
-			if len(orIters) == 0 {
-				emptyRes = true
-				return
-			}
-			maps = append(maps, bitmap.NewOrBitmap(orIters))
-		case "city_null":
-			outFields.City = true
-			switch sval {
-			case "1":
-				maps = append(maps, &CityStrings.Null)
-			case "0":
-				maps = append(maps, &CityStrings.NotNull)
-			default:
-				logf("city_null incorrect")
-				correct = false
-			}
-		case "birth_gt":
-			outFields.Birth = true
-			n, err := strconv.Atoi(sval)
-			if err != nil {
-				logf("birth_gt incorrect")
-				correct = false
-				return
-			}
-			birth := int32(n)
-			filters = append(filters, func(acc *Account) bool {
-				return acc.Birth > birth
-			})
-			birthYear := GetBirthYear(birth)
-			if birthYear < 1995-1950 {
-				return
-			}
-			orIters := make([]bitmap.IBitmap, 0, len(BirthYearIndexes)-int(birthYear)+1)
-			for ; int(birthYear) < len(BirthYearIndexes); birthYear++ {
-				orIters = append(orIters, &BirthYearIndexes[birthYear])
-			}
-			maps = append(maps, bitmap.NewOrBitmap(orIters))
-		case "birth_lt":
-			outFields.Birth = true
-			n, err := strconv.Atoi(sval)
-			if err != nil {
-				logf("birth_lt incorrect")
-				correct = false
-				return
-			}
-			birth := int32(n)
-			filters = append(filters, func(acc *Account) bool {
-				return acc.Birth < birth
-			})
-			birthYear := GetBirthYear(birth)
-			if birthYear > 1988-1950 {
-				return
-			}
-			orIters := make([]bitmap.IBitmap, 0, birthYear+1)
-			for ; birthYear >= 0; birthYear-- {
-				orIters = append(orIters, &BirthYearIndexes[birthYear])
-			}
-			maps = append(maps, bitmap.NewOrBitmap(orIters))
-		case "birth_year":
-			outFields.Birth = true
-			year, err := strconv.Atoi(sval)
-			if err != nil {
-				logf("birth_year incorrect")
-				correct = false
-				return
-			}
-			if year < 1950 || year-1950 >= len(BirthYearIndexes) {
-				emptyRes = true
-				return
-			}
-			maps = append(maps, &BirthYearIndexes[year-1950])
-		case "interests_contains", "interests_any":
-			interests := strings.Split(sval, ",")
-			iters := make([]bitmap.IBitmap, 0, len(interests))
-			for _, interest := range interests {
-				ix := InterestStrings.Find(interest)
+			case "email_domain":
+				domain := sval
+				ix := DomainsStrings.Find(domain)
 				if ix == 0 {
-					if skey == "interests_contains" {
-						emptyRes = true
-						return
-					}
-					continue
-				}
-				iters = append(iters, InterestStrings.GetMap(ix))
-			}
-			if len(iters) == 0 {
-				if skey == "interests_any" {
 					emptyRes = true
+					return
 				}
-				return
-			}
-			if skey == "interests_any" {
-				maps = append(maps, bitmap.NewOrBitmap(iters))
-			} else {
-				maps = append(maps, iters...)
-			}
-		case "likes_contains":
-			likesStrs := bytes.Split(val, []byte(","))
-			for _, likeS := range likesStrs {
-				n, err := strconv.Atoi(string(likeS))
-				if err != nil || n <= 0 || n >= int(MaxId) {
-					logf("likes_contains incorrect")
+				iterator := DomainsStrings.GetMap(ix)
+				maps = append(maps, iterator)
+			case "email_gt":
+				if len(val) == 0 {
+					return // all are greater
+				}
+				email := sval
+				emailgt := GetEmailPrefix(email)
+				filters = append(filters, func(acc *Account) bool {
+					return acc.EmailStart >= emailgt
+				})
+				if len(email) > 4 {
+					filters = append(filters, func(acc *Account) bool {
+						accEmail := EmailIndex.GetStr(acc.Email)
+						return accEmail > email
+					})
+				}
+				chix := int(email[0]) - 'a'
+				if chix < 0 {
+					return
+				} else if chix > 25 {
+					chix = 25
+				}
+				maps = append(maps, &EmailGtIndexes[chix])
+			case "email_lt":
+				if len(val) == 0 {
+					emptyRes = true
+					return // all are greater
+				}
+				email := sval
+				emaillt := GetEmailPrefix(email)
+				logf("emaillt %08x", emaillt)
+				filters = append(filters, func(acc *Account) bool {
+					logf("EmailStart %08x", acc.EmailStart)
+					return acc.EmailStart < emaillt
+				})
+				if len(email) > 4 {
+					filters = append(filters, func(acc *Account) bool {
+						accEmail := EmailIndex.GetStr(acc.Email)
+						return accEmail < email
+					})
+				}
+				chix := int(email[0]) - 'a'
+				if chix < 0 {
+					chix = 0
+				} else if chix > 25 {
+					return
+				}
+				maps = append(maps, &EmailLtIndexes[chix])
+			case "status_eq":
+				outFields.Status = true
+				switch sval {
+				case StatusFree:
+					maps = append(maps, &FreeMap)
+				case StatusMeeting:
+					maps = append(maps, &MeetingMap)
+				case StatusComplex:
+					maps = append(maps, &ComplexMap)
+				default:
+					logf("status_eq incorrect")
 					correct = false
 					return
 				}
-				w := GetLikers(int32(n))
-				if w == nil {
+			case "status_neq":
+				outFields.Status = true
+				switch sval {
+				case StatusFree:
+					maps = append(maps, &MeetingOrComplexMap)
+				case StatusMeeting:
+					maps = append(maps, &FreeOrComplexMap)
+				case StatusComplex:
+					maps = append(maps, &FreeOrMeetingMap)
+				default:
+					logf("status_neq incorrect")
+					correct = false
+					return
+				}
+			case "fname_eq":
+				outFields.Fname = true
+				ix := FnameStrings.Find(sval)
+				if ix == 0 {
 					emptyRes = true
 					return
 				}
-				maps = append(maps, w)
-			}
-		case "premium_now":
-			outFields.Premium = true
-			maps = append(maps, &PremiumNow)
-		case "premium_null":
-			outFields.Premium = true
-			switch sval {
-			case "1":
-				maps = append(maps, &PremiumNull)
-			case "0":
-				maps = append(maps, &PremiumNotNull)
+				maps = append(maps, FnameStrings.GetMap(ix))
+			case "fname_any":
+				outFields.Fname = true
+				names := strings.Split(sval, ",")
+				orIters := make([]bitmap.IBitmap, 0, len(names))
+				for _, name := range names {
+					ix := FnameStrings.Find(name)
+					if ix == 0 {
+						continue
+					}
+					orIters = append(orIters, FnameStrings.GetMap(ix))
+				}
+				if len(orIters) == 0 {
+					emptyRes = true
+					return
+				}
+				maps = append(maps, bitmap.NewOrBitmap(orIters))
+			case "fname_null":
+				outFields.Fname = true
+				switch sval {
+				case "1":
+					maps = append(maps, &FnameStrings.Null)
+				case "0":
+					maps = append(maps, &FnameStrings.NotNull)
+					/*
+						filters = append(filters, func(acc *Account) bool {
+							return acc.Fname != 0
+						})
+					*/
+				default:
+					logf("fname_null incorrect")
+					correct = false
+				}
+			case "sname_eq":
+				outFields.Sname = true
+				ix := SnameStrings.Find(sval)
+				if ix == 0 {
+					emptyRes = true
+					return
+				}
+				maps = append(maps, SnameStrings.GetMap(ix))
+			case "sname_starts":
+				outFields.Sname = true
+				SnameOnce.Sure()
+				pref := sval
+				i, j := SnameSorted.PrefixRange(pref)
+				if i == j {
+					emptyRes = true
+					return
+				}
+				orIters := make([]bitmap.IBitmap, j-i)
+				for k := i; k < j; k++ {
+					orIters[k-i] = SnameStrings.GetMap(SnameSorted.Ix[k])
+				}
+				maps = append(maps, bitmap.NewOrBitmap(orIters))
+			case "sname_null":
+				outFields.Sname = true
+				switch sval {
+				case "1":
+					maps = append(maps, &SnameStrings.Null)
+				case "0":
+					maps = append(maps, &SnameStrings.NotNull)
+					/*
+						filters = append(filters, func(acc *Account) bool {
+							return acc.Sname != 0
+						})
+					*/
+				default:
+					logf("sname_null incorrect")
+					correct = false
+				}
+			case "phone_code":
+				outFields.Phone = true
+				code := sval
+				ix := PhoneCodesStrings.Find(code)
+				if ix == 0 {
+					emptyRes = true
+					return
+				}
+				maps = append(maps, PhoneCodesStrings.GetMap(ix))
+			case "phone_null":
+				outFields.Phone = true
+				switch sval {
+				case "1":
+					maps = append(maps, &PhoneIndex.Null)
+				case "0":
+					maps = append(maps, &PhoneIndex.NotNull)
+				default:
+					logf("phone_null incorrect")
+					correct = false
+				}
+			case "country_eq":
+				outFields.Country = true
+				ix := CountryStrings.Find(sval)
+				if ix == 0 {
+					emptyRes = true
+					return
+				}
+				maps = append(maps, CountryStrings.GetMap(ix))
+			case "country_null":
+				outFields.Country = true
+				switch sval {
+				case "1":
+					maps = append(maps, &CountryStrings.Null)
+				case "0":
+					maps = append(maps, &CountryStrings.NotNull)
+				default:
+					logf("country_null incorrect")
+					correct = false
+				}
+			case "city_eq":
+				outFields.City = true
+				ix := CityStrings.Find(sval)
+				if ix == 0 {
+					emptyRes = true
+					return
+				}
+				maps = append(maps, CityStrings.GetMap(ix))
+			case "city_any":
+				outFields.City = true
+				cities := strings.Split(sval, ",")
+				orIters := make([]bitmap.IBitmap, 0, len(cities))
+				for _, name := range cities {
+					ix := CityStrings.Find(name)
+					if ix == 0 {
+						continue
+					}
+					orIters = append(orIters, CityStrings.GetMap(ix))
+				}
+				if len(orIters) == 0 {
+					emptyRes = true
+					return
+				}
+				maps = append(maps, bitmap.NewOrBitmap(orIters))
+			case "city_null":
+				outFields.City = true
+				switch sval {
+				case "1":
+					maps = append(maps, &CityStrings.Null)
+				case "0":
+					maps = append(maps, &CityStrings.NotNull)
+				default:
+					logf("city_null incorrect")
+					correct = false
+				}
+			case "birth_gt":
+				outFields.Birth = true
+				n, err := strconv.Atoi(sval)
+				if err != nil {
+					logf("birth_gt incorrect")
+					correct = false
+					return
+				}
+				birth := int32(n)
+				filters = append(filters, func(acc *Account) bool {
+					return acc.Birth > birth
+				})
+				birthYear := GetBirthYear(birth)
+				if birthYear < 1995-1950 {
+					return
+				}
+				orIters := make([]bitmap.IBitmap, 0, len(BirthYearIndexes)-int(birthYear)+1)
+				for ; int(birthYear) < len(BirthYearIndexes); birthYear++ {
+					orIters = append(orIters, &BirthYearIndexes[birthYear])
+				}
+				maps = append(maps, bitmap.NewOrBitmap(orIters))
+			case "birth_lt":
+				outFields.Birth = true
+				n, err := strconv.Atoi(sval)
+				if err != nil {
+					logf("birth_lt incorrect")
+					correct = false
+					return
+				}
+				birth := int32(n)
+				filters = append(filters, func(acc *Account) bool {
+					return acc.Birth < birth
+				})
+				birthYear := GetBirthYear(birth)
+				if birthYear > 1988-1950 {
+					return
+				}
+				orIters := make([]bitmap.IBitmap, 0, birthYear+1)
+				for ; birthYear >= 0; birthYear-- {
+					orIters = append(orIters, &BirthYearIndexes[birthYear])
+				}
+				maps = append(maps, bitmap.NewOrBitmap(orIters))
+			case "birth_year":
+				outFields.Birth = true
+				year, err := strconv.Atoi(sval)
+				if err != nil {
+					logf("birth_year incorrect")
+					correct = false
+					return
+				}
+				if year < 1950 || year-1950 >= len(BirthYearIndexes) {
+					emptyRes = true
+					return
+				}
+				maps = append(maps, &BirthYearIndexes[year-1950])
+			case "interests_contains", "interests_any":
+				interests := strings.Split(sval, ",")
+				iters := make([]bitmap.IBitmap, 0, len(interests))
+				for _, interest := range interests {
+					ix := InterestStrings.Find(interest)
+					if ix == 0 {
+						if skey == "interests_contains" {
+							emptyRes = true
+							return
+						}
+						continue
+					}
+					iters = append(iters, InterestStrings.GetMap(ix))
+				}
+				if len(iters) == 0 {
+					if skey == "interests_any" {
+						emptyRes = true
+					}
+					return
+				}
+				if skey == "interests_any" {
+					maps = append(maps, bitmap.NewOrBitmap(iters))
+				} else {
+					maps = append(maps, iters...)
+				}
+			case "likes_contains":
+				likesStrs := strings.Split(val, ",")
+				for _, likeS := range likesStrs {
+					n, err := strconv.Atoi(string(likeS))
+					if err != nil || n <= 0 || n >= int(MaxId) {
+						logf("likes_contains incorrect")
+						correct = false
+						return
+					}
+					w := GetLikers(int32(n))
+					if w == nil {
+						emptyRes = true
+						return
+					}
+					maps = append(maps, w)
+				}
+			case "premium_now":
+				outFields.Premium = true
+				maps = append(maps, &PremiumNow)
+			case "premium_null":
+				outFields.Premium = true
+				switch sval {
+				case "1":
+					maps = append(maps, &PremiumNull)
+				case "0":
+					maps = append(maps, &PremiumNotNull)
+				default:
+					logf("premium_null incorrect")
+					correct = false
+				}
+			case "query_id":
+				// ignore
 			default:
-				logf("premium_null incorrect")
+				logf("default incorrect")
 				correct = false
 			}
-		case "query_id":
-			// ignore
-		default:
-			logf("default incorrect")
-			correct = false
+		}()
+		if !correct {
+			break
 		}
-	})
+	}
 	if !correct || limit < 0 {
 		logf("correct ", correct, " limit ", limit)
 		ctx.SetStatusCode(400)
@@ -499,7 +500,6 @@ func doFilter(ctx *fasthttp.RequestCtx) {
 	}
 
 	ctx.SetStatusCode(200)
-	ctx.SetContentType("application/json")
 	stream := jsonConfig.BorrowStream(nil)
 	stream.Write([]byte(`{"accounts":[`))
 	for i, acc := range resAccs {
@@ -534,8 +534,7 @@ type GroupBy struct {
 	Interests bool
 }
 
-func doGroup(ctx *fasthttp.RequestCtx) {
-	args := ctx.QueryArgs()
+func doGroup(ctx *Request) {
 	logf("doGroup")
 	iterators := make([]bitmap.IBitmap, 0, 4)
 	groupBy := uint32(0)
@@ -550,173 +549,176 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 	statusId := 0
 	otherFilters := false
 
-	args.VisitAll(func(key []byte, val []byte) {
-		if !correct {
-			return
-		}
-		//logf("arg %s: %s", key, val)
+	for _, kv := range ctx.Args {
+		key, val := kv.k, kv.v
+		func() {
+			//logf("arg %s: %s", key, val)
 
-		skey := string(key)
-		sval := string(val)
-		switch skey {
-		case "limit":
-			var err error
-			limit, err = strconv.Atoi(sval)
-			if err != nil || limit == 0 {
-				logf("limit: %s", err)
-				correct = false
-			}
-		case "order":
-			var err error
-			order, err = strconv.Atoi(sval)
-			if err != nil {
-				logf("limit: %s", err)
-				correct = false
-			} else if order != -1 && order != 1 {
-				logf("limit: %s", sval)
-				correct = false
-			}
-		case "keys":
-			fields := strings.Split(sval, ",")
-			for _, field := range fields {
-				switch field {
-				case "sex":
-					groupBy |= GroupBySex
-				case "status":
-					groupBy |= GroupByStatus
-				case "city":
-					groupBy |= GroupByCity
-				case "country":
-					groupBy |= GroupByCountry
-				case "interests":
-					groupBy |= GroupByInterests
+			skey := string(key)
+			sval := string(val)
+			switch skey {
+			case "limit":
+				var err error
+				limit, err = strconv.Atoi(sval)
+				if err != nil || limit == 0 {
+					logf("limit: %s", err)
+					correct = false
+				}
+			case "order":
+				var err error
+				order, err = strconv.Atoi(sval)
+				if err != nil {
+					logf("limit: %s", err)
+					correct = false
+				} else if order != -1 && order != 1 {
+					logf("limit: %s", sval)
+					correct = false
+				}
+			case "keys":
+				fields := strings.Split(sval, ",")
+				for _, field := range fields {
+					switch field {
+					case "sex":
+						groupBy |= GroupBySex
+					case "status":
+						groupBy |= GroupByStatus
+					case "city":
+						groupBy |= GroupByCity
+					case "country":
+						groupBy |= GroupByCountry
+					case "interests":
+						groupBy |= GroupByInterests
+					default:
+						correct = false
+						return
+					}
+				}
+				switch bits.OnesCount32(groupBy) {
+				case 1:
+				case 2:
+					if groupBy&GroupByInterests != 0 {
+						logf("group interests with other: %s", sval)
+						correct = false
+					} else if groupBy&^(GroupByCity|GroupByCountry) == 0 {
+						logf("group city with country: %s", sval)
+						correct = false
+					} else if groupBy&^(GroupBySex|GroupByStatus) == 0 {
+						logf("group sex with status: %s", sval)
+						correct = false
+					}
 				default:
+					logf("too many keys: %s", val)
+					correct = false
+				}
+			case "sex":
+				switch sval {
+				case "m":
+					sexId = 2
+					iterators = append(iterators, &MaleMap)
+				case "f":
+					sexId = 1
+					iterators = append(iterators, &FemaleMap)
+				default:
+					logf("sex_eq incorrect")
+					correct = false
+				}
+			case "status":
+				switch sval {
+				case StatusFree:
+					statusId = StatusFreeIx
+					iterators = append(iterators, &FreeMap)
+				case StatusMeeting:
+					statusId = StatusMeetingIx
+					iterators = append(iterators, &MeetingMap)
+				case StatusComplex:
+					statusId = StatusComplexIx
+					iterators = append(iterators, &ComplexMap)
+				default:
+					logf("status_eq incorrect")
 					correct = false
 					return
 				}
-			}
-			switch bits.OnesCount32(groupBy) {
-			case 1:
-			case 2:
-				if groupBy&GroupByInterests != 0 {
-					logf("group interests with other: %s", sval)
-					correct = false
-				} else if groupBy&^(GroupByCity|GroupByCountry) == 0 {
-					logf("group city with country: %s", sval)
-					correct = false
-				} else if groupBy&^(GroupBySex|GroupByStatus) == 0 {
-					logf("group sex with status: %s", sval)
-					correct = false
+			case "country":
+				ix := CountryStrings.Find(sval)
+				if ix == 0 {
+					logf("country %s not found", sval)
+					emptyRes = true
+					return
 				}
+				countryId = int(ix)
+				iterators = append(iterators, CountryStrings.GetMap(ix))
+			case "city":
+				ix := CityStrings.Find(sval)
+				if ix == 0 {
+					logf("city %s not found", sval)
+					emptyRes = true
+					return
+				}
+				cityId = int(ix)
+				iterators = append(iterators, CityStrings.GetMap(ix))
+			case "birth":
+				year, err := strconv.Atoi(sval)
+				if err != nil {
+					logf("birth_year incorrect")
+					correct = false
+					return
+				}
+				if year < 1950 || year-1950 >= len(BirthYearIndexes) {
+					logf("birth_year out of range: %s", sval)
+					emptyRes = true
+					return
+				}
+				otherFilters = true
+				iterators = append(iterators, &BirthYearIndexes[year-1950])
+			case "joined":
+				year, err := strconv.Atoi(sval)
+				if err != nil {
+					logf("join_year incorrect")
+					correct = false
+					return
+				}
+				if year < 2011 || year-2011 >= len(JoinYearIndexes) {
+					logf("join_year out of range: %s", sval)
+					emptyRes = true
+					return
+				}
+				otherFilters = true
+				iterators = append(iterators, &JoinYearIndexes[year-2011])
+			case "interests":
+				ix := InterestStrings.Find(sval)
+				if ix == 0 {
+					logf("interest %s not found", sval)
+					emptyRes = true
+					return
+				}
+				otherFilters = true
+				iterators = append(iterators, InterestStrings.GetMap(ix))
+			case "likes":
+				n, err := strconv.Atoi(sval)
+				if err != nil || n <= 0 || n >= int(MaxId) {
+					logf("likes_contains incorrect")
+					correct = false
+					return
+				}
+				w := GetLikers(int32(n))
+				if w == nil {
+					logf("likes for %d not found", n)
+					emptyRes = true
+					return
+				}
+				otherFilters = true
+				iterators = append(iterators, w)
+			case "query_id":
+				// ignore
 			default:
-				logf("too many keys: %s", val)
+				logf("default incorrect")
 				correct = false
 			}
-		case "sex":
-			switch sval {
-			case "m":
-				sexId = 2
-				iterators = append(iterators, &MaleMap)
-			case "f":
-				sexId = 1
-				iterators = append(iterators, &FemaleMap)
-			default:
-				logf("sex_eq incorrect")
-				correct = false
-			}
-		case "status":
-			switch sval {
-			case StatusFree:
-				statusId = StatusFreeIx
-				iterators = append(iterators, &FreeMap)
-			case StatusMeeting:
-				statusId = StatusMeetingIx
-				iterators = append(iterators, &MeetingMap)
-			case StatusComplex:
-				statusId = StatusComplexIx
-				iterators = append(iterators, &ComplexMap)
-			default:
-				logf("status_eq incorrect")
-				correct = false
-				return
-			}
-		case "country":
-			ix := CountryStrings.Find(sval)
-			if ix == 0 {
-				logf("country %s not found", sval)
-				emptyRes = true
-				return
-			}
-			countryId = int(ix)
-			iterators = append(iterators, CountryStrings.GetMap(ix))
-		case "city":
-			ix := CityStrings.Find(sval)
-			if ix == 0 {
-				logf("city %s not found", sval)
-				emptyRes = true
-				return
-			}
-			cityId = int(ix)
-			iterators = append(iterators, CityStrings.GetMap(ix))
-		case "birth":
-			year, err := strconv.Atoi(sval)
-			if err != nil {
-				logf("birth_year incorrect")
-				correct = false
-				return
-			}
-			if year < 1950 || year-1950 >= len(BirthYearIndexes) {
-				logf("birth_year out of range: %s", sval)
-				emptyRes = true
-				return
-			}
-			otherFilters = true
-			iterators = append(iterators, &BirthYearIndexes[year-1950])
-		case "joined":
-			year, err := strconv.Atoi(sval)
-			if err != nil {
-				logf("join_year incorrect")
-				correct = false
-				return
-			}
-			if year < 2011 || year-2011 >= len(JoinYearIndexes) {
-				logf("join_year out of range: %s", sval)
-				emptyRes = true
-				return
-			}
-			otherFilters = true
-			iterators = append(iterators, &JoinYearIndexes[year-2011])
-		case "interests":
-			ix := InterestStrings.Find(sval)
-			if ix == 0 {
-				logf("interest %s not found", sval)
-				emptyRes = true
-				return
-			}
-			otherFilters = true
-			iterators = append(iterators, InterestStrings.GetMap(ix))
-		case "likes":
-			n, err := strconv.Atoi(sval)
-			if err != nil || n <= 0 || n >= int(MaxId) {
-				logf("likes_contains incorrect")
-				correct = false
-				return
-			}
-			w := GetLikers(int32(n))
-			if w == nil {
-				logf("likes for %d not found", n)
-				emptyRes = true
-				return
-			}
-			otherFilters = true
-			iterators = append(iterators, w)
-		case "query_id":
-			// ignore
-		default:
-			logf("default incorrect")
-			correct = false
+		}()
+		if !correct {
+			break
 		}
-	})
+	}
 	logf("groupBy %d iterators %#v limit %d order %d", groupBy, iterators, limit, order)
 
 	if !correct || limit < 0 || order == 0 {
@@ -731,7 +733,6 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 	}
 
 	ctx.SetStatusCode(200)
-	ctx.SetContentType("application/json")
 	stream := jsonConfig.BorrowStream(nil)
 	stream.Write([]byte(`{"groups":[`))
 
@@ -1033,7 +1034,7 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 	jsonConfig.ReturnStream(stream)
 }
 
-func doSuggest(ctx *fasthttp.RequestCtx, iid int) {
+func doSuggest(ctx *Request, iid int) {
 	id := int32(iid)
 	if int(id) != iid {
 		ctx.SetStatusCode(404)
@@ -1046,14 +1047,13 @@ func doSuggest(ctx *fasthttp.RequestCtx, iid int) {
 		return
 	}
 
-	args := ctx.QueryArgs()
 	//iterators := make([]bitmap.IBitmap, 0, 4)
 	var filter func(uid int32) bool
 	correct := true
 	emptyRes := false
 	limit := -1
 
-	args.VisitAll(func(key []byte, val []byte) {
+	ctx.VisitArgs(func(key string, val string) {
 		if !correct {
 			return
 		}
@@ -1218,7 +1218,6 @@ Outter:
 	logf("uids len %d", len(uids))
 
 	ctx.SetStatusCode(200)
-	ctx.SetContentType("application/json")
 	stream := jsonConfig.BorrowStream(nil)
 	stream.Write([]byte(`{"accounts":[`))
 	outFields := OutFields{Status: true, Fname: true, Sname: true,
@@ -1234,7 +1233,7 @@ Outter:
 	jsonConfig.ReturnStream(stream)
 }
 
-func doRecommend(ctx *fasthttp.RequestCtx, iid int) {
+func doRecommend(ctx *Request, iid int) {
 	id := int32(iid)
 	if int(id) != iid {
 		ctx.SetStatusCode(404)
@@ -1247,13 +1246,12 @@ func doRecommend(ctx *fasthttp.RequestCtx, iid int) {
 		return
 	}
 
-	args := ctx.QueryArgs()
 	var maps []bitmap.IBitmap
 	correct := true
 	emptyRes := false
 	limit := -1
 
-	args.VisitAll(func(key []byte, val []byte) {
+	ctx.VisitArgs(func(key string, val string) {
 		if !correct {
 			return
 		}
@@ -1367,7 +1365,6 @@ func doRecommend(ctx *fasthttp.RequestCtx, iid int) {
 	}
 
 	ctx.SetStatusCode(200)
-	ctx.SetContentType("application/json")
 	stream := jsonConfig.BorrowStream(nil)
 	stream.Write([]byte(`{"accounts":[`))
 	outFields := OutFields{Status: true, Fname: true, Sname: true, Birth: true,
