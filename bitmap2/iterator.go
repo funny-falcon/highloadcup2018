@@ -2,9 +2,17 @@ package bitmap2
 
 import "sort"
 
+type looperIt interface {
+	Loop(func(u []int32) bool)
+}
+
 func LoopMap(bm IBitmap, f func(u []int32) bool) {
 	var indx BlockUnroll
 	it, last := bm.Iterator()
+	if lp, ok := it.(looperIt); ok {
+		lp.Loop(f)
+		return
+	}
 	for last >= 0 {
 		block, next := it.FetchAndNext(last)
 		if next >= last {
@@ -85,6 +93,9 @@ func NewAndBitmap(bm []IBitmap) IBitmap {
 		hg2, ok2 := bm[1].(*Huge)
 		if ok1 && ok2 {
 			return &And2HugeBitmap{hg1, hg2}
+			//return And2Huge(hg1, hg2)
+		} else {
+			return &And2Bitmap{bm[0], bm[1]}
 		}
 	}
 	return am
@@ -134,12 +145,12 @@ func (it *AndIterator) FetchAndNext(span int32) (*Block, int32) {
 	return &it.B, next
 }
 
-type And2HugeBitmap [2]*Huge
+type And2HugeBitmap struct{ A, B *Huge }
 
 func (h2 *And2HugeBitmap) Iterator() (Iterator, int32) {
-	_, lasta := h2[0].Iterator()
-	_, lastb := h2[1].Iterator()
-	it := And2HugeBitmapIter{M: *h2}
+	_, lasta := h2.A.Iterator()
+	_, lastb := h2.B.Iterator()
+	it := And2HugeBitmapIter{And2HugeBitmap: *h2}
 	if lasta < lastb {
 		return &it, lasta
 	}
@@ -147,15 +158,59 @@ func (h2 *And2HugeBitmap) Iterator() (Iterator, int32) {
 }
 
 type And2HugeBitmapIter struct {
-	M And2HugeBitmap
+	And2HugeBitmap
 	Block
 }
 
 func (it *And2HugeBitmapIter) FetchAndNext(span int32) (*Block, int32) {
-	bla, lasta := it.M[0].FetchAndNext(span)
-	blb, _ := it.M[1].FetchAndNext(span)
+	bla, lasta := it.A.FetchAndNext(span)
+	blb, _ := it.B.FetchAndNext(span)
 	it.Block = bla.IntersectNew(blb)
 	return &it.Block, lasta
+}
+
+func (it *And2HugeBitmapIter) Loop(f func(u []int32) bool) {
+	var indx BlockUnroll
+	l := len(it.A.B)
+	if len(it.B.B) < l {
+		l = len(it.B.B)
+	}
+	l /= BlockLen
+	ap, bp := it.A.p, it.B.p
+	for l > 0 {
+		l--
+		bl := arefBlock(ap, l).IntersectNew(arefBlock(bp, l))
+		if !bl.Empty() && !f(bl.Unroll(int32(l*BlockSize), &indx)) {
+			break
+		}
+	}
+}
+
+type And2Bitmap [2]IBitmap
+
+func (h2 *And2Bitmap) Iterator() (Iterator, int32) {
+	ita, lasta := h2[0].Iterator()
+	itb, lastb := h2[1].Iterator()
+	it := And2BitmapIter{A: ita, B: itb}
+	if lasta < lastb {
+		return &it, lasta
+	}
+	return &it, lastb
+}
+
+type And2BitmapIter struct {
+	A, B Iterator
+	Block
+}
+
+func (it *And2BitmapIter) FetchAndNext(span int32) (*Block, int32) {
+	bla, lasta := it.A.FetchAndNext(span)
+	blb, lastb := it.B.FetchAndNext(span)
+	it.Block = bla.IntersectNew(blb)
+	if lasta < lastb {
+		return &it.Block, lasta
+	}
+	return &it.Block, lastb
 }
 
 type OrBitmap struct {

@@ -210,10 +210,15 @@ func (sp *BitmapSpan) FetchAndNext(bl *Block, sid uint16, ix int) (*Block, int) 
 			return bl, ix
 		}
 	} else {
+		i := int(sid / BlockSize)
+		bp := arefBlock(p, i)
 		if sid > 0 {
-			return arefBlock(p, int(sid/BlockSize)), ix + 1
+			if arefBlock(p, i-1).Empty() && sid > BlockSize {
+				return bp, ix + 2
+			}
+			return bp, ix + 1
 		} else {
-			return arefBlock(p, int(sid/BlockSize)), -1
+			return bp, -1
 		}
 	}
 }

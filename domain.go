@@ -85,8 +85,23 @@ func (s SmallAccount) Sex() bool {
 	return s.StatusSexPremium&4 != 0
 }
 
+func (s SmallAccount) SexIx() int {
+	return int((s.StatusSexPremium & 4) >> 2)
+}
+
 func (s SmallAccount) Premium() bool {
 	return s.StatusSexPremium&8 != 0
+}
+
+func (a *Account) SexIx() int {
+	if a.Sex {
+		return 1
+	}
+	return 0
+}
+
+func (a *Account) StatusIx() int {
+	return int(a.Status - 1)
 }
 
 /*
@@ -424,3 +439,6 @@ func GetLikers(i int32) *bitmap.Likes {
 const LikeUidShift = 8
 const LikeUidMask = (^int32(0)) << LikeUidShift
 const LikeCntMask = (1 << LikeUidShift) - 1
+
+var CityGroups [1000][6]uint32
+var CountryGroups [100][6]uint32

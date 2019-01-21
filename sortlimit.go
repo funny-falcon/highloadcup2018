@@ -1,11 +1,11 @@
 package main
 
-type counter struct {
+type groupCounter struct {
 	u uint32
-	s float64
+	s uint32
 }
 
-func SortGroupLimit(limit int, order int, gr []counter, less func(idi, idj uint32) bool) []counter {
+func SortGroupLimit(limit int, order int, gr []groupCounter, less func(idi, idj uint32) bool) []groupCounter {
 	i := 0
 	for _, g := range gr {
 		if g.s > 0 {
@@ -37,7 +37,7 @@ func SortGroupLimit(limit int, order int, gr []counter, less func(idi, idj uint3
 	return gr
 }
 
-func SortGroupLimitAsc(limit int, gr []counter, less func(idi, idj uint32) bool) {
+func SortGroupLimitAsc(limit int, gr []groupCounter, less func(idi, idj uint32) bool) {
 	l := len(gr)
 	if l < 10 {
 		if l > 6 {
@@ -86,7 +86,7 @@ func SortGroupLimitAsc(limit int, gr []counter, less func(idi, idj uint32) bool)
 	}
 }
 
-func SortGroupLimitDesc(limit int, gr []counter, less func(idi, idj uint32) bool) {
+func SortGroupLimitDesc(limit int, gr []groupCounter, less func(idi, idj uint32) bool) {
 	l := len(gr)
 	if l < 10 {
 		if l > 6 {
@@ -135,7 +135,12 @@ func SortGroupLimitDesc(limit int, gr []counter, less func(idi, idj uint32) bool
 	}
 }
 
-func Heapify(gr []counter) []counter {
+type suggestCounter struct {
+	u uint32
+	s float64
+}
+
+func Heapify(gr []suggestCounter) []suggestCounter {
 	i := 0
 	for _, g := range gr {
 		if g.s > 0 {
@@ -150,7 +155,7 @@ func Heapify(gr []counter) []counter {
 	return gr
 }
 
-func CntPop(ob []counter) []counter {
+func CntPop(ob []suggestCounter) []suggestCounter {
 	l := len(ob) - 1
 	if l > 0 {
 		ob[0] = ob[l]
@@ -159,7 +164,7 @@ func CntPop(ob []counter) []counter {
 	return ob[:l]
 }
 
-func CntSiftUp(ob []counter, i int) {
+func CntSiftUp(ob []suggestCounter, i int) {
 	el := ob[i]
 	l := len(ob)
 	for i*2+1 < l {
@@ -177,7 +182,7 @@ func CntSiftUp(ob []counter, i int) {
 	ob[i] = el
 }
 
-type cntHash []counter
+type cntHash []suggestCounter
 
 func newCntHash(n int) cntHash {
 	l := 8
@@ -187,7 +192,7 @@ func newCntHash(n int) cntHash {
 	return make(cntHash, l)
 }
 
-func (c cntHash) Insert(id uint32) *counter {
+func (c cntHash) Insert(id uint32) *suggestCounter {
 	mask := uint32(len(c) - 1)
 	pos := id & mask
 	d := uint32(1)

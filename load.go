@@ -11,6 +11,7 @@ import (
 	"runtime/debug"
 	"runtime/pprof"
 	"sync"
+	"sync/atomic"
 
 	"github.com/funny-falcon/highloadcup2018/alloc2"
 	bitmap "github.com/funny-falcon/highloadcup2018/bitmap2"
@@ -138,7 +139,7 @@ func Load() {
 		}()
 	}
 	wg.Wait()
-	debug.SetGCPercent(20)
+	debug.SetGCPercent(30)
 
 	fmt.Println("LikesAlloc ", bitmap.LikesAlloc.TotalAlloc, bitmap.LikesAlloc.TotalFree,
 		len(bitmap.LikesAlloc.Free)*alloc2.ChunkSize)
@@ -168,6 +169,8 @@ func Load() {
 		f.Close()
 	}
 
+	fmt.Println("City ", len(CityStrings.Arr))
+	fmt.Println("Country ", len(CountryStrings.Arr))
 	/*
 		fmt.Println("SnameStrings ", SnameStrings.Stat())
 		fmt.Println("CityStrings ", CityStrings.Stat())
@@ -268,6 +271,10 @@ func InsertAccount(accin *AccountIn) {
 	}
 	acc.Likes = likes.ForceAlloc()
 	likesImplPool.Put(smallImpl)
+
+	atomic.AddUint32(&CityGroups[acc.City][acc.StatusIx()+acc.SexIx()*3], 1)
+	atomic.AddUint32(&CountryGroups[acc.Country][acc.StatusIx()+acc.SexIx()*3], 1)
+
 	SetSmallAccount(acc.Uid, acc.SmallAccount())
 }
 
@@ -346,6 +353,8 @@ func UpdateAccount(acc *Account, accin *AccountIn) bool {
 		}
 	}
 
+	atomic.AddUint32(&CountryGroups[acc.Country][acc.StatusIx()+acc.SexIx()*3], ^uint32(0))
+	atomic.AddUint32(&CityGroups[acc.City][acc.StatusIx()+acc.SexIx()*3], ^uint32(0))
 	if accin.Country != "" {
 		oldCountry := CountryStrings.GetStr(uint32(acc.Country))
 		if oldCountry != accin.Country {
@@ -431,6 +440,8 @@ func UpdateAccount(acc *Account, accin *AccountIn) bool {
 			acc.Status = newStatus
 		}
 	}
+	atomic.AddUint32(&CountryGroups[acc.Country][acc.StatusIx()+acc.SexIx()*3], 1)
+	atomic.AddUint32(&CityGroups[acc.City][acc.StatusIx()+acc.SexIx()*3], 1)
 
 	if len(accin.Interests) > 0 {
 		var newIntersets bitmap.Block

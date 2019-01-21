@@ -544,6 +544,11 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 	emptyRes := false
 	limit := -1
 	order := 0
+	cityId := 0
+	countryId := 0
+	sexId := 0
+	statusId := 0
+	otherFilters := false
 
 	args.VisitAll(func(key []byte, val []byte) {
 		if !correct {
@@ -610,8 +615,10 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 		case "sex":
 			switch sval {
 			case "m":
+				sexId = 2
 				iterators = append(iterators, &MaleMap)
 			case "f":
+				sexId = 1
 				iterators = append(iterators, &FemaleMap)
 			default:
 				logf("sex_eq incorrect")
@@ -620,10 +627,13 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 		case "status":
 			switch sval {
 			case StatusFree:
+				statusId = StatusFreeIx
 				iterators = append(iterators, &FreeMap)
 			case StatusMeeting:
+				statusId = StatusMeetingIx
 				iterators = append(iterators, &MeetingMap)
 			case StatusComplex:
+				statusId = StatusComplexIx
 				iterators = append(iterators, &ComplexMap)
 			default:
 				logf("status_eq incorrect")
@@ -637,6 +647,7 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 				emptyRes = true
 				return
 			}
+			countryId = int(ix)
 			iterators = append(iterators, CountryStrings.GetMap(ix))
 		case "city":
 			ix := CityStrings.Find(sval)
@@ -645,6 +656,7 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 				emptyRes = true
 				return
 			}
+			cityId = int(ix)
 			iterators = append(iterators, CityStrings.GetMap(ix))
 		case "birth":
 			year, err := strconv.Atoi(sval)
@@ -658,6 +670,7 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 				emptyRes = true
 				return
 			}
+			otherFilters = true
 			iterators = append(iterators, &BirthYearIndexes[year-1950])
 		case "joined":
 			year, err := strconv.Atoi(sval)
@@ -671,6 +684,7 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 				emptyRes = true
 				return
 			}
+			otherFilters = true
 			iterators = append(iterators, &JoinYearIndexes[year-2011])
 		case "interests":
 			ix := InterestStrings.Find(sval)
@@ -679,6 +693,7 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 				emptyRes = true
 				return
 			}
+			otherFilters = true
 			iterators = append(iterators, InterestStrings.GetMap(ix))
 		case "likes":
 			n, err := strconv.Atoi(sval)
@@ -693,6 +708,7 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 				emptyRes = true
 				return
 			}
+			otherFilters = true
 			iterators = append(iterators, w)
 		case "query_id":
 			// ignore
@@ -719,22 +735,22 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 	stream := jsonConfig.BorrowStream(nil)
 	stream.Write([]byte(`{"groups":[`))
 
-	var groups []counter
+	var groups []groupCounter
 	switch {
 	case groupBy == GroupByInterests:
-		groups = make([]counter, len(InterestStrings.Arr))
+		groups = make([]groupCounter, len(InterestStrings.Arr))
 		for i := range InterestStrings.Arr {
-			groups[i] = counter{u: uint32(i + 1)}
+			groups[i] = groupCounter{u: uint32(i + 1)}
 		}
 
 		var iterator bitmap.IBitmap
 		switch len(iterators) {
 		case 0:
 			for i := range InterestStrings.Arr {
-				groups[i].s = float64(InterestStrings.Maps[i].GetSize())
+				groups[i].s = InterestStrings.Maps[i].GetSize()
 			}
 		default:
-			iterators = append(iterators, &InterestStrings.NotNull)
+			//iterators = append(iterators, &InterestStrings.NotNull)
 			//iterator = bitmap.Materialize(bitmap.NewAndBitmap(iterators))
 			iterator = bitmap.NewAndBitmap(iterators)
 			//*
@@ -748,7 +764,7 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 				return true
 			})
 			for i, c := range counts[:len(groups)] {
-				groups[i].s = float64(c)
+				groups[i].s = uint32(c)
 			}
 			//*/
 			/*
@@ -809,7 +825,7 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 			ncity = 1
 		}
 		ngroups = ncity * cityMult
-		groups = make([]counter, ngroups+3)
+		groups = make([]groupCounter, ngroups+3)
 		for i := 0; i < ncity; i++ {
 			k := i * cityMult
 			groups[k].u = uint32(i << 8)
@@ -817,46 +833,127 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 			groups[k+2].u = uint32(i<<8) + 2
 		}
 		groups = groups[:ngroups]
+		var mapSmallAcc func(acc SmallAccount, c uint32)
+		switch groupBy {
+		case GroupByCity:
+			mapSmallAcc = func(acc SmallAccount, c uint32) { groups[acc.City].s += c }
+		case GroupByCountry:
+			mapSmallAcc = func(acc SmallAccount, c uint32) { groups[acc.Country].s += c }
+		case GroupBySex:
+			mapSmallAcc = func(acc SmallAccount, c uint32) { groups[acc.SexIx()].s += c }
+		case GroupByStatus:
+			mapSmallAcc = func(acc SmallAccount, c uint32) { groups[acc.Status()-1].s += c }
+		case GroupByCitySex:
+			mapSmallAcc = func(acc SmallAccount, c uint32) {
+				groups[int(acc.City)*2+acc.SexIx()].s += c
+			}
+		case GroupByCityStatus:
+			mapSmallAcc = func(acc SmallAccount, c uint32) {
+				groups[int(acc.City)*3+acc.Status()-1].s += c
+			}
+		case GroupByCountrySex:
+			mapSmallAcc = func(acc SmallAccount, c uint32) {
+				groups[int(acc.Country)*2+acc.SexIx()].s += c
+			}
+		case GroupByCountryStatus:
+			mapSmallAcc = func(acc SmallAccount, c uint32) {
+				groups[int(acc.Country)*3+acc.Status()-1].s += c
+			}
+		}
+		if !otherFilters {
+			if groupBy&GroupByCountry != 0 && cityId != 0 {
+				otherFilters = true
+			} else if groupBy&GroupByCity != 0 && countryId != 0 {
+				otherFilters = true
+			}
+		}
 		if len(iterators) == 0 && groupBy&(GroupByCountry|GroupByCity) == 0 {
 			switch cityMult {
 			case 2:
-				groups[0].s = float64(FemaleMap.Size)
-				groups[1].s = float64(MaleMap.Size)
+				groups[0].s = FemaleMap.Size
+				groups[1].s = MaleMap.Size
 			case 3:
-				groups[StatusFreeIx-1].s = float64(FreeMap.Size)
-				groups[StatusMeetingIx-1].s = float64(MeetingMap.Size)
-				groups[StatusComplexIx-1].s = float64(ComplexMap.Size)
+				groups[StatusFreeIx-1].s = FreeMap.Size
+				groups[StatusMeetingIx-1].s = MeetingMap.Size
+				groups[StatusComplexIx-1].s = ComplexMap.Size
 			}
 		} else if len(iterators) == 0 && groupBy&(GroupByCountry|GroupByCity) == groupBy {
-			groups[0].s = float64(nullIt.GetSize())
+			groups[0].s = nullIt.GetSize()
 			for i, mp := range maps {
-				groups[i+1].s = float64(mp.GetSize())
+				groups[i+1].s = mp.GetSize()
+			}
+		} else if !otherFilters {
+			var iterLine func(*[6]uint32)
+			var acc SmallAccount
+			if sexId != 0 && statusId != 0 {
+				iterLine = func(line *[6]uint32) {
+					i := statusId - 1
+					acc.StatusSexPremium = uint8(statusId)
+					if sexId == 2 {
+						acc.StatusSexPremium |= 4
+						i += 3
+					}
+					mapSmallAcc(acc, line[i])
+				}
+			} else if statusId != 0 {
+				iterLine = func(line *[6]uint32) {
+					i := statusId - 1
+					acc.StatusSexPremium = uint8(statusId)
+					mapSmallAcc(acc, line[i])
+					acc.StatusSexPremium |= 4
+					mapSmallAcc(acc, line[i+3])
+				}
+			} else if sexId != 0 {
+				iterLine = func(line *[6]uint32) {
+					acc.StatusSexPremium = uint8(1 + (sexId-1)*4)
+					i := (sexId - 1) * 3
+					mapSmallAcc(acc, line[i])
+					acc.StatusSexPremium++
+					mapSmallAcc(acc, line[i+1])
+					acc.StatusSexPremium++
+					mapSmallAcc(acc, line[i+2])
+				}
+			} else {
+				iterLine = func(line *[6]uint32) {
+					acc.StatusSexPremium = 1
+					mapSmallAcc(acc, line[0])
+					acc.StatusSexPremium = 2
+					mapSmallAcc(acc, line[1])
+					acc.StatusSexPremium = 3
+					mapSmallAcc(acc, line[2])
+					acc.StatusSexPremium = 5
+					mapSmallAcc(acc, line[3])
+					acc.StatusSexPremium = 6
+					mapSmallAcc(acc, line[4])
+					acc.StatusSexPremium = 7
+					mapSmallAcc(acc, line[5])
+				}
+			}
+			lineToAcc := func(int) {}
+			var massive [][6]uint32
+			var base int
+			if groupBy&GroupByCountry != 0 {
+				lineToAcc = func(i int) { acc.Country = uint8(i) }
+				massive = CountryGroups[:len(CountryStrings.Arr)+1]
+			} else if groupBy&GroupByCity != 0 {
+				lineToAcc = func(i int) { acc.City = uint16(i) }
+				massive = CityGroups[:len(CityStrings.Arr)+1]
+			}
+			if cityId != 0 {
+				massive = CityGroups[cityId : cityId+1]
+				base = cityId
+			} else if countryId != 0 {
+				massive = CountryGroups[countryId : countryId+1]
+				base = countryId
+			}
+			for i := range massive {
+				lineToAcc(base + i)
+				iterLine(&massive[i])
 			}
 		} else {
 			mapper := func(u []int32) bool {
 				for _, uid := range u {
-					k := 0
-					acc := GetSmallAccount(uid)
-					if groupBy&GroupByCity != 0 {
-						k = int(acc.City) * cityMult
-					} else if groupBy&GroupByCountry != 0 {
-						k = int(acc.Country) * cityMult
-					}
-					if cityMult == 2 {
-						if acc.Sex() {
-							k++
-						}
-					} else if cityMult == 3 {
-						k += int(acc.Status()) - 1
-					}
-					groups[k].s++
-
-					/*
-						cityi := CountryStrings.GetStr(uint32(acc.Country))
-						if cityi == "Росмаль" {
-							logf("city %s status %s", cityi, GetStatus(acc.Status))
-						}
-					*/
+					mapSmallAcc(GetSmallAccount(uid), 1)
 				}
 				return true
 			}
@@ -868,19 +965,17 @@ func doGroup(ctx *fasthttp.RequestCtx) {
 			}
 			switch cityMult {
 			case 1:
-				groups[0].s = float64(bitmap.CountMap(bitmap.NewAndBitmap(iterators)))
+				groups[0].s = bitmap.CountMap(bitmap.NewAndBitmap(iterators))
 			case 2:
-				groups[0].s = float64(bitmap.CountMap(
-					bitmap.NewAndBitmap(append(iterators, &FemaleMap))))
-				groups[1].s = float64(bitmap.CountMap(
-					bitmap.NewAndBitmap(append(iterators, &MaleMap))))
+				groups[0].s = bitmap.CountMap(bitmap.NewAndBitmap(append(iterators, &FemaleMap)))
+				groups[1].s = bitmap.CountMap(bitmap.NewAndBitmap(append(iterators, &MaleMap)))
 			case 3:
-				groups[StatusFreeIx-1].s = float64(bitmap.CountMap(
-					bitmap.NewAndBitmap(append(iterators, &FreeMap))))
-				groups[StatusMeetingIx-1].s = float64(bitmap.CountMap(
-					bitmap.NewAndBitmap(append(iterators, &MeetingMap))))
-				groups[StatusComplexIx-1].s = float64(bitmap.CountMap(
-					bitmap.NewAndBitmap(append(iterators, &ComplexMap))))
+				groups[StatusFreeIx-1].s = bitmap.CountMap(
+					bitmap.NewAndBitmap(append(iterators, &FreeMap)))
+				groups[StatusMeetingIx-1].s = bitmap.CountMap(
+					bitmap.NewAndBitmap(append(iterators, &MeetingMap)))
+				groups[StatusComplexIx-1].s = bitmap.CountMap(
+					bitmap.NewAndBitmap(append(iterators, &ComplexMap)))
 				logf("ComplexMap size %d %v", ComplexMap.Size, groups[StatusComplexIx-1])
 				logf("Status counts: %v", groups[:3])
 			}

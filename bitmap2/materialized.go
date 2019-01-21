@@ -70,3 +70,12 @@ func (mi *MatIterator) FetchAndNext(span int32) (*Block, int32) {
 	}
 	return bl, mi.B.B[ix].Span
 }
+
+func (mi *MatIterator) Loop(f func(u []int32) bool) {
+	var indx BlockUnroll
+	for _, el := range mi.B.B {
+		if !f(el.B.Unroll(el.Span, &indx)) {
+			break
+		}
+	}
+}

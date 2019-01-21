@@ -87,3 +87,47 @@ func (h *Huge) FetchAndNext(span int32) (*Block, int32) {
 	}
 	return arefBlock(h.p, k/BlockLen), span - BlockSize
 }
+
+/*
+func And2Huge(a, b *Huge) *Huge {
+	r := &Huge{}
+	l := len(a.B)
+	if len(b.B) < l {
+		l = len(b.B)
+	}
+	r.B = make([]byte, l)
+	r.p = ptr0_8(r.B)
+	l /= BlockLen
+	rp, ap, bp := r.p, a.p, b.p
+	for i := 0; i < l; i++ {
+		bl := arefBlock(ap, i).IntersectNew(arefBlock(bp, i))
+		*arefBlock(rp, i) = bl
+		r.Size += bl.Count()
+	}
+	return r
+}
+*/
+
+func And2Huge(a, b *Huge) *Materialized {
+	r := &Materialized{}
+	l := len(a.B)
+	if len(b.B) < l {
+		l = len(b.B)
+	}
+	l /= BlockLen
+	r.B = make([]MElem, l, l)
+	ap, bp := a.p, b.p
+	k := 0
+	for l > 0 {
+		l--
+		bl := arefBlock(ap, l).IntersectNew(arefBlock(bp, l))
+		if !bl.Empty() {
+			r.B[k].B = bl
+			r.B[k].Span = int32(l * BlockSize)
+			r.Size += bl.Count()
+			k++
+		}
+	}
+	r.B = r.B[:k]
+	return r
+}

@@ -66,50 +66,73 @@ func (b *Block) Union(o *Block) {
 	b[1] |= o[1]
 }
 
-func (b *Block) Unroll(span int32, r *BlockUnroll) []int32 {
-	k := 0
+func (b Block) Unroll(span int32, r *BlockUnroll) []int32 {
 	p := uintptr(unsafe.Pointer(r))
-	k = unroll32(uint32(b[1]>>32), span+127, k, p)
-	k = unroll32(uint32(b[1]), span+95, k, p)
-	k = unroll32(uint32(b[0]>>32), span+63, k, p)
-	k = unroll32(uint32(b[0]), span+31, k, p)
-	return r[:k]
+	rp := p
+	p = unroll32(uint32(b[1]>>32), span+127, p)
+	p = unroll32(uint32(b[1]), span+95, p)
+	p = unroll32(uint32(b[0]>>32), span+63, p)
+	p = unroll32(uint32(b[0]), span+31, p)
+	return r[:(p-rp)/4]
 }
 
-func unroll32(v uint32, sp int32, k int, r uintptr) int {
-	for ; v != 0; v <<= 4 {
-		switch v >> 30 {
-		case 3:
-			*aref32(r, k) = sp
-			*aref32(r, k+1) = sp - 1
-			k += 2
-		case 2:
-			*aref32(r, k) = sp
-			k++
-		case 1:
-			*aref32(r, k) = sp - 1
-			k++
-		case 0:
-		}
-		switch (v >> 28) & 3 {
-		case 3:
-			*aref32(r, k) = sp - 2
-			*aref32(r, k+1) = sp - 3
-			k += 2
-		case 2:
-			*aref32(r, k) = sp - 2
-			k++
-		case 1:
-			*aref32(r, k) = sp - 3
-			k++
-		case 0:
-		}
-		sp -= 4
+func unroll32(v uint32, sp int32, r uintptr) uintptr {
+	if v&0xffff0000 == 0 {
+		v <<= 16
+		sp -= 16
 	}
-	return k
+	for ; v != 0; v <<= 8 {
+		*aref32(r, 0) = sp
+		r += uintptr((v >> 29) & 4)
+		*aref32(r, 0) = sp - 1
+		r += uintptr((v >> 28) & 4)
+		*aref32(r, 0) = sp - 2
+		r += uintptr((v >> 27) & 4)
+		*aref32(r, 0) = sp - 3
+		r += uintptr((v >> 26) & 4)
+		*aref32(r, 0) = sp - 4
+		r += uintptr((v >> 25) & 4)
+		*aref32(r, 0) = sp - 5
+		r += uintptr((v >> 24) & 4)
+		*aref32(r, 0) = sp - 6
+		r += uintptr((v >> 23) & 4)
+		*aref32(r, 0) = sp - 7
+		r += uintptr((v >> 22) & 4)
+		sp -= 8
+		/*
+			switch v >> 30 {
+			case 3:
+				*aref32(r, k) = sp
+				*aref32(r, k+1) = sp - 1
+				k += 2
+			case 2:
+				*aref32(r, k) = sp
+				k++
+			case 1:
+				*aref32(r, k) = sp - 1
+				k++
+			case 0:
+			}
+			switch (v >> 28) & 3 {
+			case 3:
+				*aref32(r, k) = sp - 2
+				*aref32(r, k+1) = sp - 3
+				k += 2
+			case 2:
+				*aref32(r, k) = sp - 2
+				k++
+			case 1:
+				*aref32(r, k) = sp - 3
+				k++
+			case 0:
+			}
+			sp -= 4
+		*/
+	}
+	return r
 }
 
-func (b *Block) UnrollCount(r *BlockUnroll) {
+func (b Block) UnrollCount(r *BlockUnroll) {
 	p := uintptr(unsafe.Pointer(r))
 	unrollCount32(uint32(b[1]>>32), p+96*4)
 	unrollCount32(uint32(b[1]), p+64*4)
@@ -117,32 +140,22 @@ func (b *Block) UnrollCount(r *BlockUnroll) {
 	unrollCount32(uint32(b[0]), p)
 }
 
-func unrollCount32(v uint32, r uintptr) int {
-	k := 0
-	for ; v != 0; v >>= 4 {
-		switch v & 3 {
-		case 3:
-			*aref32(r, k+1)++
-			*aref32(r, k)++
-		case 2:
-			*aref32(r, k+1)++
-		case 1:
-			*aref32(r, k)++
-		case 0:
-		}
-		switch (v >> 2) & 3 {
-		case 3:
-			*aref32(r, k+3)++
-			*aref32(r, k+2)++
-		case 2:
-			*aref32(r, k+3)++
-		case 1:
-			*aref32(r, k+2)++
-		case 0:
-		}
-		k += 4
+func unrollCount32(v uint32, r uintptr) {
+	if v&0xffff == 0 {
+		v >>= 16
+		r += 64
 	}
-	return k
+	for ; v != 0; v >>= 8 {
+		*aref32(r, 0) += int32(v & 1)
+		*aref32(r, 1) += int32((v >> 1) & 1)
+		*aref32(r, 2) += int32((v >> 2) & 1)
+		*aref32(r, 3) += int32((v >> 3) & 1)
+		*aref32(r, 4) += int32((v >> 4) & 1)
+		*aref32(r, 5) += int32((v >> 5) & 1)
+		*aref32(r, 6) += int32((v >> 6) & 1)
+		*aref32(r, 7) += int32((v >> 7) & 1)
+		r += 32
+	}
 }
 
 //*/

@@ -17,8 +17,8 @@ const ShardFind = (1 << 32) / StringShards
 type StringsTable struct {
 	Tbl     []uint32
 	Arr     []StringHandle
-	Null    bitmap.Bitmap
-	NotNull bitmap.Bitmap
+	Null    bitmap.Huge
+	NotNull bitmap.Huge
 }
 
 type StringHandle struct {
