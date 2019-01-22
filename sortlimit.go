@@ -170,10 +170,10 @@ func CntSiftUp(ob []suggestCounter, i int) {
 	for i*2+1 < l {
 		c1 := i*2 + 1
 		c2 := c1 + 1
-		if c2 < l && (ob[c2].s > ob[c1].s || ob[c2].s == ob[c1].s && ob[c2].u > ob[c1].u) {
+		if c2 < l && (ob[c2].s > ob[c1].s || ob[c2].s == ob[c1].s && ob[c2].u < ob[c1].u) {
 			c1 = c2
 		}
-		if el.s > ob[c1].s || el.s == ob[c1].s && el.u > ob[c1].u {
+		if el.s > ob[c1].s || el.s == ob[c1].s && el.u < ob[c1].u {
 			break
 		}
 		ob[i] = ob[c1]
