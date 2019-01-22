@@ -28,7 +28,7 @@ func Acceptor(port int) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	go Epoller()
+	//go Epoller()
 	ncpu := runtime.NumCPU()
 	fmt.Print("numcpu ", ncpu)
 	if ncpu < 4 {
@@ -36,9 +36,10 @@ func Acceptor(port int) {
 	} else if ncpu > 32 {
 		ncpu = 32
 	}
-	ncpu += ncpu / 2
+	ncpu += 1 //ncpu / 4
 	for i := 0; i < ncpu; i++ {
-		go HTTPHandler()
+		go EpollHttp()
+		//go HTTPHandler()
 	}
 
 	sock, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_STREAM, 0)
@@ -101,34 +102,64 @@ func Epoller() {
 	}
 }
 
+func EpollHttp() {
+	runtime.LockOSThread()
+	var events [1]syscall.EpollEvent
+	var req Request
+	for {
+		nevents, err := syscall.EpollWait(epollfd, events[:], -1)
+		if err != nil {
+			if err == syscall.EINTR {
+				continue
+			}
+			log.Fatal(err)
+		}
+		if nevents == 1 {
+			event := events[0]
+			switch {
+			case event.Events&(syscall.EPOLLHUP|syscall.EPOLLRDHUP) != 0:
+				syscall.Close(int(event.Fd))
+			case event.Events&syscall.EPOLLIN != 0:
+				HTTPHandleFd(File(event.Fd), &req)
+			default:
+				log.Fatalf("Unknown epoll event %x", event.Events)
+			}
+		}
+	}
+}
+
 func HTTPHandler() {
 	//runtime.LockOSThread()
 	var req Request
 	for fd := range readChan {
-		req = Request{File: fd}
-		err := req.Parse()
-		if err != nil {
-			log.Print(err)
-			fd.Close()
-			continue
-		}
-		err = myHandler(&req)
-		if err != nil {
-			if !req.Written {
-				req.SetStatusCode(500)
-			}
-			log.Print(err)
-		}
-		if !req.Written {
-			req.SetBody(nil)
-		}
-		if err != nil || req.Err != nil {
-			fd.Close()
-			continue
-		}
-
-		fd.addToEpoll(false)
+		HTTPHandleFd(fd, &req)
 	}
+}
+
+func HTTPHandleFd(fd File, req *Request) {
+	*req = Request{File: fd}
+	err := req.Parse()
+	if err != nil {
+		log.Print(err)
+		fd.Close()
+		return
+	}
+	err = myHandler(req)
+	if err != nil {
+		if !req.Written {
+			req.SetStatusCode(500)
+		}
+		log.Print(err)
+	}
+	if !req.Written {
+		req.SetBody(nil)
+	}
+	if err != nil || req.Err != nil {
+		fd.Close()
+		return
+	}
+
+	fd.addToEpoll(false)
 }
 
 type File int
