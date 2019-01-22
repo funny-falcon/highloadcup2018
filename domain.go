@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	bitmap "github.com/funny-falcon/highloadcup2018/bitmap2"
@@ -126,11 +125,7 @@ func SureCapa(slicePtr interface{}, capa int) {
 	val.Set(newVal)
 }
 
-var accMutex sync.Mutex
-
 func SureAccount(i int32) *Account {
-	accMutex.Lock()
-	defer accMutex.Unlock()
 	if int(i) >= len(Accounts) {
 		ln := int32(1)
 		for ; ln < i; ln *= 2 {
@@ -410,10 +405,8 @@ func (s *SnameSorting) PrefixRange(pref string) (i, j int) {
 }
 
 var Likers = make([]uintptr, 1536*1024)
-var likersMtx sync.Mutex
 
 func SureLikers(i int32, f func(*bitmap.Likes)) {
-	likersMtx.Lock()
 	if int(i) >= len(Likers) {
 		ln := int32(1)
 		for ; ln < i; ln *= 2 {
@@ -423,7 +416,6 @@ func SureLikers(i int32, f func(*bitmap.Likes)) {
 		Likers = newLikers
 	}
 	f(bitmap.GetLikes(&Likers[i]))
-	likersMtx.Unlock()
 }
 
 func GetLikers(i int32) *bitmap.Likes {

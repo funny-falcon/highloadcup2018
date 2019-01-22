@@ -2,11 +2,9 @@ package bitmap2
 
 import (
 	"math/bits"
-	"sync"
 )
 
 type Huge struct {
-	sync.Mutex
 	Size uint32
 	p    uintptr
 	B    []uint8
@@ -17,8 +15,6 @@ func (h *Huge) GetSize() uint32 {
 }
 
 func (h *Huge) Set(i int32) {
-	h.Lock()
-	defer h.Unlock()
 	k := int(i >> 3)
 	if k >= len(h.B) {
 		l := (k + BlockLen) &^ (BlockLen - 1)
@@ -43,8 +39,6 @@ func (h *Huge) Set(i int32) {
 }
 
 func (h *Huge) Unset(i int32) {
-	h.Lock()
-	defer h.Unlock()
 	k := int(i >> 3)
 	if k >= len(h.B) {
 		return

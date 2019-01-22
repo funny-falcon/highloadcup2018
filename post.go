@@ -3,10 +3,13 @@ package main
 import (
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/funny-falcon/highloadcup2018/bitmap2"
 )
+
+var globMutex sync.RWMutex
 
 func postHandler(ctx *Request, path string) {
 	switch {
@@ -40,52 +43,64 @@ var unix2018 = int32(time.Date(2018, 1, 1, 0, 0, 0, 0, time.UTC).Unix())
 
 func doNew(ctx *Request) bool {
 	var accin AccountIn
-	iter := jsonConfig.BorrowIterator(ctx.Body)
-	iter.ReadVal(&accin)
-	if iter.Error != nil {
-		logf("doNew iter error: %v", iter.Error)
+
+	ok := func() bool {
+		globMutex.RLock()
+		defer globMutex.RUnlock()
+
+		iter := jsonConfig.BorrowIterator(ctx.Body)
+		iter.ReadVal(&accin)
+		if iter.Error != nil {
+			logf("doNew iter error: %v", iter.Error)
+			return false
+		}
+
+		if accin.Id == 0 {
+			logf("id is not set")
+			return false
+		}
+		if HasAccount(int32(accin.Id)) != nil {
+			logf("id is already used %d", accin.Id)
+			return false
+		}
+		if !commonValidate(&accin, false) {
+			return false
+		}
+		otherMap := &MaleMap
+		if accin.Sex == "m" {
+			otherMap = &FemaleMap
+		}
+		for _, like := range accin.Likes {
+			if like.Ts < accin.Joined {
+				logf("like ts %d less than joined %d", like.Ts, accin.Joined)
+				return false
+			}
+			if !AccountsMap.Has(like.Id) {
+				logf("user %d doesn't exists to be liked by %d", like.Id, accin.Id)
+				return false
+			}
+			if !otherMap.Has(like.Id) {
+				logf("user %d is not of other sex", like.Id, accin.Id)
+				return false
+			}
+		}
+		if !EmailIndex.IsFree(accin.Email) {
+			logf("email is not free %s", accin.Email)
+			return false
+		}
+		if accin.Phone != "" && !PhoneIndex.IsFree(accin.Phone) {
+			logf("phone is not free %s", accin.Phone)
+			return false
+		}
+		return true
+	}()
+	if !ok {
 		return false
 	}
 
-	if accin.Id == 0 {
-		logf("id is not set")
-		return false
-	}
-	if HasAccount(int32(accin.Id)) != nil {
-		logf("id is already used %d", accin.Id)
-		return false
-	}
-	if !commonValidate(&accin, false) {
-		return false
-	}
-	otherMap := &MaleMap
-	if accin.Sex == "m" {
-		otherMap = &FemaleMap
-	}
-	for _, like := range accin.Likes {
-		if like.Ts < accin.Joined {
-			logf("like ts %d less than joined %d", like.Ts, accin.Joined)
-			return false
-		}
-		if !AccountsMap.Has(like.Id) {
-			logf("user %d doesn't exists to be liked by %d", like.Id, accin.Id)
-			return false
-		}
-		if !otherMap.Has(like.Id) {
-			logf("user %d is not of other sex", like.Id, accin.Id)
-			return false
-		}
-	}
-	if !EmailIndex.IsFree(accin.Email) {
-		logf("email is not free %s", accin.Email)
-		return false
-	}
-	if accin.Phone != "" && !PhoneIndex.IsFree(accin.Phone) {
-		logf("phone is not free %s", accin.Phone)
-		return false
-	}
-
+	globMutex.Lock()
 	InsertAccount(&accin)
+	globMutex.Unlock()
 	ctx.SetStatusCode(201)
 	ctx.SetBody([]byte("{}"))
 	return true
@@ -98,43 +113,56 @@ type DoLike struct {
 }
 
 func doLikes(ctx *Request) bool {
-	iter := jsonConfig.BorrowIterator(ctx.Body)
-	defer jsonConfig.ReturnIterator(iter)
-	if attr := iter.ReadObject(); attr != "likes" {
-		logf("likes doesn't likes")
-		return false
-	}
 	var likes []DoLike
 	var like struct {
 		Liker uint32 `json:"liker"`
 		Likee uint32 `json:"likee"`
 		Ts    int32  `json:"ts"`
 	}
-	for iter.ReadArray() {
-		iter.ReadVal(&like)
-		if !AccountsMap.Has(int32(like.Likee)) {
-			logf("there is no likee %d", like.Likee)
+
+	ok := func() bool {
+		globMutex.RLock()
+		defer globMutex.RUnlock()
+
+		iter := jsonConfig.BorrowIterator(ctx.Body)
+		defer jsonConfig.ReturnIterator(iter)
+
+		if attr := iter.ReadObject(); attr != "likes" {
+			logf("likes doesn't likes")
 			return false
 		}
-		if !AccountsMap.Has(int32(like.Liker)) {
-			logf("there is no liker %d", like.Liker)
+		for iter.ReadArray() {
+			iter.ReadVal(&like)
+			if !AccountsMap.Has(int32(like.Likee)) {
+				logf("there is no likee %d", like.Likee)
+				return false
+			}
+			if !AccountsMap.Has(int32(like.Liker)) {
+				logf("there is no liker %d", like.Liker)
+				return false
+			}
+			likes = append(likes, DoLike{
+				Liker: int32(like.Liker),
+				Likee: int32(like.Likee),
+				Ts:    like.Ts,
+			})
+		}
+		if iter.Error != nil || iter.ReadObject() != "" || iter.Error != nil {
+			logf("parsing likes fails: %v", iter.Error)
 			return false
 		}
-		likes = append(likes, DoLike{
-			Liker: int32(like.Liker),
-			Likee: int32(like.Likee),
-			Ts:    like.Ts,
-		})
-	}
-	if iter.Error != nil || iter.ReadObject() != "" || iter.Error != nil {
-		logf("parsing likes fails: %v", iter.Error)
+		return true
+	}()
+	if !ok {
 		return false
 	}
 
+	globMutex.Lock()
 	for _, like := range likes {
 		bitmap2.GetSmall(&HasAccount(like.Liker).Likes).Set(like.Likee)
 		SureLikers(like.Likee, func(l *bitmap2.Likes) { l.SetTs(like.Liker, like.Ts) })
 	}
+	globMutex.Unlock()
 
 	logf("doLikes Looks to be ok")
 	ctx.SetStatusCode(202)
@@ -144,33 +172,49 @@ func doLikes(ctx *Request) bool {
 
 func doUpdate(ctx *Request, id int) bool {
 	var accin AccountIn
-	iter := jsonConfig.BorrowIterator(ctx.Body)
-	iter.ReadVal(&accin)
-	if iter.Error != nil {
-		logf("doNew iter error: %v", iter.Error)
-		return false
-	}
+	var acc *Account
 
-	if accin.Id != 0 {
-		logf("id should not be set in update")
-		return false
-	}
-	acc := HasAccount(int32(id))
-	if acc == nil {
-		logf("user is not found %d", accin.Id)
-		ctx.SetStatusCode(404)
+	var res bool
+	ok := func() bool {
+		globMutex.RLock()
+		defer globMutex.RUnlock()
+
+		iter := jsonConfig.BorrowIterator(ctx.Body)
+		iter.ReadVal(&accin)
+		if iter.Error != nil {
+			logf("doNew iter error: %v", iter.Error)
+			return false
+		}
+
+		if accin.Id != 0 {
+			logf("id should not be set in update")
+			return false
+		}
+		acc = HasAccount(int32(id))
+		if acc == nil {
+			logf("user is not found %d", accin.Id)
+			ctx.SetStatusCode(404)
+			res = true
+			return false
+		}
+		if !commonValidate(&accin, true) {
+			return false
+		}
+
+		if len(accin.Likes) != 0 {
+			logf("could not update likes")
+			return false
+		}
 		return true
-	}
-	if !commonValidate(&accin, true) {
-		return false
-	}
-
-	if len(accin.Likes) != 0 {
-		logf("could not update likes")
-		return false
+	}()
+	if !ok {
+		return res
 	}
 
-	if !UpdateAccount(acc, &accin) {
+	globMutex.Lock()
+	ok = UpdateAccount(acc, &accin)
+	globMutex.Unlock()
+	if !ok {
 		return false
 	}
 

@@ -92,7 +92,7 @@ func Load() {
 	}
 	defer rdr.Close()
 	debug.SetGCPercent(5)
-	sema := make(chan int, 3)
+	sema := make(chan int, 1)
 	var wg sync.WaitGroup
 	var compactMtx sync.RWMutex
 	for _nf, _f := range rdr.File {

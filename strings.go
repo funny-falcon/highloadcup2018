@@ -153,7 +153,6 @@ func (ush *StringsTable) SetNull(uid int32, isNull bool) {
 }
 
 type UniqStrings struct {
-	sync.Mutex
 	StringsTable
 }
 
@@ -161,9 +160,6 @@ func (us *UniqStrings) InsertUid(s string, uid int32) (uint32, bool) {
 	if len(s) > 255 {
 		panic("String is too long " + s)
 	}
-
-	us.Lock()
-	defer us.Unlock()
 
 	us.SetNull(uid, s == "")
 	if s == "" {
@@ -183,9 +179,6 @@ func (us *UniqStrings) InsertUid(s string, uid int32) (uint32, bool) {
 }
 
 func (us *UniqStrings) IsFree(email string) bool {
-	us.Lock()
-	defer us.Unlock()
-
 	ix := us.Find(email)
 	if ix == 0 {
 		return true
@@ -197,8 +190,6 @@ func (us *UniqStrings) ResetUser(ix uint32, uid int32) {
 	if ix == 0 {
 		return
 	}
-	us.Lock()
-	defer us.Unlock()
 	hndl := us.GetHndl(ix)
 	if hndl.Handle != uintptr(uid) {
 		panic(fmt.Sprintf("User %d is not owner of string %s", uid, hndl.Str()))
@@ -218,11 +209,8 @@ func (ss *SomeStrings) Add(str string, uid int32) uint32 {
 		panic("String is too long " + str)
 	}
 
-	ss.Lock()
-
 	ss.SetNull(uid, str == "")
 	if str == "" {
-		ss.Unlock()
 		return 0
 	}
 
@@ -235,8 +223,6 @@ func (ss *SomeStrings) Add(str string, uid int32) uint32 {
 		}
 	}
 	ss.Maps[ix-1].Set(uid)
-
-	ss.Unlock()
 	return ix
 }
 
@@ -275,7 +261,5 @@ func (ss *SomeStrings) GetMap(ix uint32) bitmap.IMutBitmap {
 }
 
 func (ss *SomeStrings) Unset(ix uint32, i int32) {
-	ss.Lock()
 	ss.GetMap(ix).Unset(i)
-	ss.Unlock()
 }

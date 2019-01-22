@@ -1,7 +1,6 @@
 package bitmap2
 
 import (
-	"sync"
 	"unsafe"
 )
 
@@ -38,7 +37,6 @@ type BitmapSpan struct {
 type Bitmap struct {
 	B    []BitmapSpan
 	Size uint32
-	sync.Mutex
 }
 
 func (b *Bitmap) GetSize() uint32 {
@@ -46,7 +44,6 @@ func (b *Bitmap) GetSize() uint32 {
 }
 
 func (b *Bitmap) Set(id int32) {
-	b.Lock()
 	bigspan := uint8(id >> 16)
 	for i := range b.B {
 		sp := &b.B[i]
@@ -54,7 +51,6 @@ func (b *Bitmap) Set(id int32) {
 			if sp.Set(id) {
 				b.Size++
 			}
-			b.Unlock()
 			return
 		} else if sp.Span < bigspan {
 			b.B = append(b.B, BitmapSpan{})
@@ -62,18 +58,15 @@ func (b *Bitmap) Set(id int32) {
 			b.B[i] = BitmapSpan{Span: bigspan}
 			b.B[i].Set(id)
 			b.Size++
-			b.Unlock()
 			return
 		}
 	}
 	b.B = append(b.B, BitmapSpan{Span: bigspan})
 	b.B[len(b.B)-1].Set(id)
 	b.Size++
-	b.Unlock()
 }
 
 func (b *Bitmap) Unset(id int32) {
-	b.Lock()
 	bigspan := uint8(id >> 16)
 	for i := range b.B {
 		sp := &b.B[i]
@@ -86,14 +79,11 @@ func (b *Bitmap) Unset(id int32) {
 				}
 				b.Size--
 			}
-			b.Unlock()
 			return
 		} else if sp.Span < bigspan {
-			b.Unlock()
 			return
 		}
 	}
-	b.Unlock()
 }
 
 func (b *Bitmap) LastSpan() int32 {
