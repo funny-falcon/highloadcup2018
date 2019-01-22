@@ -102,7 +102,7 @@ func Epoller() {
 }
 
 func HTTPHandler() {
-	runtime.LockOSThread()
+	//runtime.LockOSThread()
 	var req Request
 	for fd := range readChan {
 		req = Request{File: fd}
@@ -255,7 +255,7 @@ func (r *Request) Parse() error {
 	for {
 		nextLine := bytes.Index(r.BufBuf[r.LastLine:r.Filled], []byte("\r\n"))
 		if nextLine == -1 {
-			if err := r.read(); err != nil {
+			if err := r.read(len(r.BufBuf)); err != nil {
 				return err
 			}
 			continue
@@ -290,8 +290,8 @@ func (r *Request) Parse() error {
 		}
 	}
 
-	for r.LastLine+r.ContentLength < r.Filled {
-		if err := r.read(); err != nil {
+	for r.LastLine+r.ContentLength > r.Filled {
+		if err := r.read(r.LastLine + r.ContentLength); err != nil {
 			return err
 		}
 	}
@@ -413,14 +413,10 @@ func c2d(c byte) byte {
 	return (c &^ 0x20) - 'A' + 10
 }
 
-func (r *Request) read() error {
-	n, err := r.File.Read(r.BufBuf[r.Filled:])
+func (r *Request) read(lim int) error {
+	n, err := r.File.Read(r.BufBuf[r.Filled:lim])
 	if err != nil {
 		return err
-	}
-	if n == 0 {
-		r.EOF = true
-		return io.EOF
 	}
 	r.Filled += n
 	return nil

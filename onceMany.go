@@ -38,8 +38,8 @@ func (o *Once) Sure() {
 func (o *Once) Reset() {
 	atomic.StoreUint32(&o.done, 0)
 	now := time.Now()
-	if now.Sub(o.tr) > time.Second/4 {
+	if now.Sub(o.tr) > time.Second/8 {
 		o.tr = now
-		o.t.Reset(time.Second)
+		o.t.Reset(time.Second / 2)
 	}
 }
