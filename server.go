@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"runtime"
 	"strconv"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -102,6 +103,21 @@ func Epoller() {
 	}
 }
 
+var locks [3000]uint32
+
+func lockFd(fd int32) bool {
+	if atomic.LoadUint32(&locks[fd]) == 1 {
+		return false
+	}
+	if atomic.SwapUint32(&locks[fd], 1) == 1 {
+		return false
+	}
+	return true
+}
+func unlockFd(fd int32) {
+	atomic.StoreUint32(&locks[fd], 0)
+}
+
 func EpollHttp() {
 	runtime.LockOSThread()
 	var events [1]syscall.EpollEvent
@@ -116,13 +132,23 @@ func EpollHttp() {
 		}
 		if nevents == 1 {
 			event := events[0]
+			if !lockFd(event.Fd) {
+				log.Printf("skip locked fd")
+				continue
+			}
+			ok := false
 			switch {
 			case event.Events&(syscall.EPOLLHUP|syscall.EPOLLRDHUP) != 0:
-				syscall.Close(int(event.Fd))
 			case event.Events&syscall.EPOLLIN != 0:
-				HTTPHandleFd(File(event.Fd), &req)
+				ok = HTTPHandleFd(File(event.Fd), &req)
 			default:
 				log.Fatalf("Unknown epoll event %x", event.Events)
+			}
+			unlockFd(event.Fd)
+			if !ok {
+				File(event.Fd).Close()
+			} else {
+				File(event.Fd).addToEpoll(false)
 			}
 		}
 	}
@@ -136,16 +162,14 @@ func HTTPHandler() {
 	}
 }
 
-func HTTPHandleFd(fd File, req *Request) {
+func HTTPHandleFd(fd File, req *Request) bool {
 	*req = Request{}
 	req.File = fd
 	err := req.Parse()
 	if err != nil {
 		log.Print(err)
-		fd.Close()
-		return
+		return false
 	}
-	fd.addToEpoll(false)
 	err = myHandler(req)
 	if err != nil {
 		if !req.Written {
@@ -157,17 +181,16 @@ func HTTPHandleFd(fd File, req *Request) {
 		req.SetBody(nil)
 	}
 	if err != nil || req.Err != nil {
-		fd.Close()
-		return
+		return false
 	}
-
+	return true
 }
 
 type File int
 
 func (f File) addToEpoll(add bool) {
 	var ev syscall.EpollEvent
-	ev.Events = syscall.EPOLLRDHUP | syscall.EPOLLONESHOT | syscall.EPOLLIN | (-syscall.EPOLLET)
+	ev.Events = syscall.EPOLLRDHUP | syscall.EPOLLONESHOT | syscall.EPOLLIN
 	ev.Fd = int32(f)
 	kind := syscall.EPOLL_CTL_MOD
 	if add {
@@ -294,6 +317,10 @@ func (r *Request) Parse() error {
 		}
 		line := r.BufBuf[r.LastLine : r.LastLine+nextLine]
 		if r.LastLine == 0 {
+			if len(line) == 0 {
+				r.Filled = 0
+				continue
+			}
 			methix := bytes.IndexByte(line, ' ')
 			if methix == -1 {
 				return fmt.Errorf("No space in first line: %q", string(line))
@@ -323,7 +350,7 @@ func (r *Request) Parse() error {
 	}
 
 	for r.LastLine+r.ContentLength > r.Filled {
-		if err := r.read(r.LastLine + r.ContentLength); err != nil {
+		if err := r.read(r.LastLine + r.ContentLength + 2); err != nil {
 			return err
 		}
 	}

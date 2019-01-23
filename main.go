@@ -68,6 +68,7 @@ func myHandler(ctx *Request) error {
 			ctx.SetBody([]byte("{}"))
 			return nil
 		}
+		log.Printf("unknown path %s", meth)
 		ctx.SetStatusCode(400)
 		return nil
 	}
@@ -76,6 +77,9 @@ func myHandler(ctx *Request) error {
 		getHandler(ctx, path[10:])
 	case "POST":
 		postHandler(ctx, path[10:])
+	default:
+		log.Printf("unknown method %s", meth)
+		ctx.SetStatusCode(400)
 	}
 	return nil
 }
