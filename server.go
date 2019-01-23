@@ -137,13 +137,15 @@ func HTTPHandler() {
 }
 
 func HTTPHandleFd(fd File, req *Request) {
-	*req = Request{File: fd}
+	*req = Request{}
+	req.File = fd
 	err := req.Parse()
 	if err != nil {
 		log.Print(err)
 		fd.Close()
 		return
 	}
+	fd.addToEpoll(false)
 	err = myHandler(req)
 	if err != nil {
 		if !req.Written {
@@ -159,14 +161,13 @@ func HTTPHandleFd(fd File, req *Request) {
 		return
 	}
 
-	fd.addToEpoll(false)
 }
 
 type File int
 
 func (f File) addToEpoll(add bool) {
 	var ev syscall.EpollEvent
-	ev.Events = syscall.EPOLLRDHUP | syscall.EPOLLONESHOT | syscall.EPOLLIN
+	ev.Events = syscall.EPOLLRDHUP | syscall.EPOLLONESHOT | syscall.EPOLLIN | (-syscall.EPOLLET)
 	ev.Fd = int32(f)
 	kind := syscall.EPOLL_CTL_MOD
 	if add {
@@ -295,7 +296,7 @@ func (r *Request) Parse() error {
 		if r.LastLine == 0 {
 			methix := bytes.IndexByte(line, ' ')
 			if methix == -1 {
-				return errors.New("No space in first line")
+				return fmt.Errorf("No space in first line: %q", string(line))
 			}
 			r.Method = b2s(r.BufBuf[:methix])
 
@@ -446,11 +447,8 @@ func c2d(c byte) byte {
 
 func (r *Request) read(lim int) error {
 	n, err := r.File.Read(r.BufBuf[r.Filled:lim])
-	if err != nil {
-		return err
-	}
 	r.Filled += n
-	return nil
+	return err
 }
 
 func b2s(b []byte) string {
