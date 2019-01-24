@@ -306,7 +306,7 @@ func (r *Request) Parse() error {
 			if methix == -1 {
 				return fmt.Errorf("No space in first line: %q", string(line))
 			}
-			r.Method = b2s(r.BufBuf[:methix])
+			r.Method = b2s(line[:methix])
 
 			uriix := methix + 1 + bytes.IndexByte(line[methix+1:], ' ')
 			if uriix == methix {
