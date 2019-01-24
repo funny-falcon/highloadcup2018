@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"runtime"
 	"strconv"
-	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -103,21 +102,6 @@ func Epoller() {
 	}
 }
 
-var locks [3000]uint32
-
-func lockFd(fd int32) bool {
-	if atomic.LoadUint32(&locks[fd]) == 1 {
-		return false
-	}
-	if atomic.SwapUint32(&locks[fd], 1) == 1 {
-		return false
-	}
-	return true
-}
-func unlockFd(fd int32) {
-	atomic.StoreUint32(&locks[fd], 0)
-}
-
 func EpollHttp() {
 	runtime.LockOSThread()
 	var events [1]syscall.EpollEvent
@@ -132,10 +116,6 @@ func EpollHttp() {
 		}
 		if nevents == 1 {
 			event := events[0]
-			if !lockFd(event.Fd) {
-				log.Printf("skip locked fd")
-				continue
-			}
 			ok := false
 			switch {
 			case event.Events&(syscall.EPOLLHUP|syscall.EPOLLRDHUP) != 0:
@@ -144,7 +124,6 @@ func EpollHttp() {
 			default:
 				log.Fatalf("Unknown epoll event %x", event.Events)
 			}
-			unlockFd(event.Fd)
 			if !ok {
 				File(event.Fd).Close()
 			} else {
@@ -316,10 +295,12 @@ func (r *Request) Parse() error {
 			continue
 		}
 		line := r.BufBuf[r.LastLine : r.LastLine+nextLine]
-		if r.LastLine == 0 {
+		if r.LastLine <= 2 {
 			if len(line) == 0 {
-				r.Filled = 0
+				r.LastLine = 2
 				continue
+			} else if line[0] == '\n' {
+				line = line[1:]
 			}
 			methix := bytes.IndexByte(line, ' ')
 			if methix == -1 {
