@@ -61,14 +61,18 @@ func myHandler(ctx *Request) error {
 			if err := pprof.StartCPUProfile(f); err != nil {
 				log.Fatal("could not start CPU profile: ", err)
 			}
+			ctx.SetStatusCode(200)
+			return nil
 		} else if path == "/stop_profile" {
 			pprof.StopCPUProfile()
+			ctx.SetStatusCode(200)
+			return nil
 		} else if path == "/test" {
 			ctx.SetStatusCode(200)
 			ctx.SetBody([]byte("{}"))
 			return nil
 		}
-		log.Printf("unknown path %s", meth)
+		log.Printf("unknown path %s", path)
 		ctx.SetStatusCode(400)
 		return nil
 	}
