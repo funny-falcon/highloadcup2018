@@ -67,6 +67,54 @@ func (b *Block) Union(o *Block) {
 }
 
 func (b Block) Unroll(span int32, r *BlockUnroll) []int32 {
+	rp := uintptr(unsafe.Pointer(r))
+	p := rp + 127*4
+	for _, v := range b {
+		sp := span
+		for v != 0 {
+			if b := uintptr(v & 0xffff); b != 0 {
+				*aref32(p, 0) = sp + 0
+				p -= uintptr((b << 2) & 4)
+				*aref32(p, 0) = sp + 1
+				p -= uintptr((b << 1) & 4)
+				*aref32(p, 0) = sp + 2
+				p -= uintptr((b << 0) & 4)
+				*aref32(p, 0) = sp + 3
+				p -= uintptr((b >> 1) & 4)
+				*aref32(p, 0) = sp + 4
+				p -= uintptr((b >> 2) & 4)
+				*aref32(p, 0) = sp + 5
+				p -= uintptr((b >> 3) & 4)
+				*aref32(p, 0) = sp + 6
+				p -= uintptr((b >> 4) & 4)
+				*aref32(p, 0) = sp + 7
+				p -= uintptr((b >> 5) & 4)
+				*aref32(p, 0) = sp + 8
+				p -= uintptr((b >> 6) & 4)
+				*aref32(p, 0) = sp + 9
+				p -= uintptr((b >> 7) & 4)
+				*aref32(p, 0) = sp + 10
+				p -= uintptr((b >> 8) & 4)
+				*aref32(p, 0) = sp + 11
+				p -= uintptr((b >> 9) & 4)
+				*aref32(p, 0) = sp + 12
+				p -= uintptr((b >> 10) & 4)
+				*aref32(p, 0) = sp + 13
+				p -= uintptr((b >> 11) & 4)
+				*aref32(p, 0) = sp + 14
+				p -= uintptr((b >> 12) & 4)
+				*aref32(p, 0) = sp + 15
+				p -= uintptr((b >> 13) & 4)
+			}
+			v >>= 16
+			sp += 16
+		}
+		span += 64
+	}
+	return r[(p+4-rp)/4:]
+}
+
+func (b Block) Unroll1(span int32, r *BlockUnroll) []int32 {
 	p := uintptr(unsafe.Pointer(r))
 	rp := p
 	p = unroll32(uint32(b[1]>>32), span+127, p)
@@ -155,6 +203,33 @@ func unrollCount32(v uint32, r uintptr) {
 		*aref32(r, 6) += int32((v >> 6) & 1)
 		*aref32(r, 7) += int32((v >> 7) & 1)
 		r += 32
+	}
+}
+
+func (b Block) UnrollCount1(r *BlockUnroll) {
+	p := uintptr(unsafe.Pointer(r))
+	for _, v := range b {
+		r := p
+		for v != 0 {
+			if v&0xffff == 0 {
+				v >>= 16
+				r += 64
+				continue
+			}
+			if b := int32(v & 0xff); b != 0 {
+				*aref32(r, 0) += int32(b & 1)
+				*aref32(r, 1) += int32((b >> 1) & 1)
+				*aref32(r, 2) += int32((b >> 2) & 1)
+				*aref32(r, 3) += int32((b >> 3) & 1)
+				*aref32(r, 4) += int32((b >> 4) & 1)
+				*aref32(r, 5) += int32((b >> 5) & 1)
+				*aref32(r, 6) += int32((b >> 6) & 1)
+				*aref32(r, 7) += int32((b >> 7) & 1)
+			}
+			v >>= 8
+			r += 32
+		}
+		p += 4 * 64
 	}
 }
 
