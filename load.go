@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -27,7 +28,7 @@ var jsonConfig = jsoniter.Config{
 }.Froze()
 
 type AccountIn struct {
-	Id        uint32   `json:"id"`
+	Id        int32    `json:"id"`
 	Email     string   `json:"email"`
 	Fname     string   `json:"fname"`
 	Sname     string   `json:"sname"`
@@ -43,14 +44,91 @@ type AccountIn struct {
 		Start  int32 `json:"start"`
 		Finish int32 `json:"finish"`
 	} `json:"premium"`
-	Likes []struct {
-		Id int32 `json:"id"`
-		Ts int32 `json:"ts"`
-	} `json:"likes"`
+	Likes []Like `json:"likes"`
+}
+type Like struct {
+	Id int32 `json:"id"`
+	Ts int32 `json:"ts"`
 }
 
-type AccountsIn struct {
-	Accounts []AccountIn `json:"accounts"`
+func loadAccount(iter *jsoniter.Iterator, accin *AccountIn) error {
+Acc:
+	for {
+		field := iter.ReadObject()
+		if iter.Error != nil {
+			return iter.Error
+		}
+		switch field {
+		case "":
+			break Acc
+		case "id":
+			accin.Id = iter.ReadInt32()
+		case "birth":
+			accin.Birth = iter.ReadInt32()
+		case "joined":
+			accin.Joined = iter.ReadInt32()
+		case "email":
+			accin.Email = iter.ReadString()
+		case "fname":
+			accin.Fname = iter.ReadString()
+		case "sname":
+			accin.Sname = iter.ReadString()
+		case "phone":
+			accin.Phone = iter.ReadString()
+		case "sex":
+			accin.Sex = iter.ReadString()
+		case "country":
+			accin.Country = iter.ReadString()
+		case "city":
+			accin.City = iter.ReadString()
+		case "status":
+			accin.Status = iter.ReadString()
+		case "premium":
+		Prem:
+			for {
+				fld := iter.ReadObject()
+				switch fld {
+				case "":
+					break Prem
+				case "start":
+					accin.Premium.Start = iter.ReadInt32()
+				case "finish":
+					accin.Premium.Finish = iter.ReadInt32()
+				default:
+					return fmt.Errorf("unknown premium %q %v", fld, fld == "finish")
+				}
+			}
+		case "interests":
+			for iter.ReadArray() {
+				accin.Interests = append(accin.Interests, iter.ReadString())
+			}
+		case "likes":
+			for iter.ReadArray() {
+				var id, ts int32
+			Likes:
+				for {
+					fld := iter.ReadObject()
+					switch fld {
+					case "":
+						break Likes
+					case "id":
+						id = iter.ReadInt32()
+					case "ts":
+						ts = iter.ReadInt32()
+					default:
+						return errors.New("unknown like field " + fld)
+					}
+				}
+				accin.Likes = append(accin.Likes, Like{Id: id, Ts: ts})
+			}
+		default:
+			return errors.New("unknown acc field " + field)
+		}
+		if iter.Error != nil {
+			return iter.Error
+		}
+	}
+	return iter.Error
 }
 
 func Compact() {
@@ -117,7 +195,11 @@ func Load() {
 			}
 			for iter.ReadArray() {
 				var accin AccountIn
-				iter.ReadVal(&accin)
+				if err := loadAccount(iter, &accin); err != nil {
+					iter.Error = err
+					break
+				}
+				//iter.ReadVal(&accin)
 				if iter.Error != nil {
 					break
 				}

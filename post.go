@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	jsoniter "github.com/json-iterator/go"
+
 	"github.com/funny-falcon/highloadcup2018/bitmap2"
 )
 
@@ -49,7 +51,10 @@ func doNew(ctx *Request) bool {
 		defer globMutex.RUnlock()
 
 		iter := jsonConfig.BorrowIterator(ctx.Body)
-		iter.ReadVal(&accin)
+		//iter.ReadVal(&accin)
+		if err := loadAccount(iter, &accin); err != nil {
+			iter.Error = err
+		}
 		if iter.Error != nil {
 			logf("doNew iter error: %v", iter.Error)
 			return false
@@ -112,13 +117,30 @@ type DoLike struct {
 	Ts    int32
 }
 
+func readLike(iter *jsoniter.Iterator, lk *DoLike) {
+	*lk = DoLike{}
+	for {
+		fld := iter.ReadObject()
+		if fld == "" {
+			return
+		}
+		switch fld {
+		case "likee":
+			lk.Likee = iter.ReadInt32()
+		case "liker":
+			lk.Liker = iter.ReadInt32()
+		case "ts":
+			lk.Ts = iter.ReadInt32()
+		}
+		if iter.Error != nil {
+			return
+		}
+	}
+}
+
 func doLikes(ctx *Request) bool {
 	var likes []DoLike
-	var like struct {
-		Liker uint32 `json:"liker"`
-		Likee uint32 `json:"likee"`
-		Ts    int32  `json:"ts"`
-	}
+	var like DoLike
 
 	ok := func() bool {
 		globMutex.RLock()
@@ -132,7 +154,7 @@ func doLikes(ctx *Request) bool {
 			return false
 		}
 		for iter.ReadArray() {
-			iter.ReadVal(&like)
+			readLike(iter, &like)
 			if !AccountsMap.Has(int32(like.Likee)) {
 				logf("there is no likee %d", like.Likee)
 				return false
@@ -141,11 +163,7 @@ func doLikes(ctx *Request) bool {
 				logf("there is no liker %d", like.Liker)
 				return false
 			}
-			likes = append(likes, DoLike{
-				Liker: int32(like.Liker),
-				Likee: int32(like.Likee),
-				Ts:    like.Ts,
-			})
+			likes = append(likes, like)
 		}
 		if iter.Error != nil || iter.ReadObject() != "" || iter.Error != nil {
 			logf("parsing likes fails: %v", iter.Error)
@@ -180,7 +198,9 @@ func doUpdate(ctx *Request, id int) bool {
 		defer globMutex.RUnlock()
 
 		iter := jsonConfig.BorrowIterator(ctx.Body)
-		iter.ReadVal(&accin)
+		if err := loadAccount(iter, &accin); err != nil {
+			iter.Error = err
+		}
 		if iter.Error != nil {
 			logf("doNew iter error: %v", iter.Error)
 			return false
