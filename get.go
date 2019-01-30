@@ -760,7 +760,7 @@ func doGroup(ctx *Request) {
 				for _, uid := range u {
 					//Accounts[uid].Interests.UnrollCount(&counts)
 					int := GetInterest(uid)
-					int.UnrollCount1(&counts)
+					int.UnrollCount(&counts)
 				}
 				return true
 			})
