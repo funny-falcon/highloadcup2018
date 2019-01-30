@@ -12,7 +12,6 @@ import (
 	"runtime/debug"
 	"runtime/pprof"
 	"sync"
-	"sync/atomic"
 
 	"github.com/funny-falcon/highloadcup2018/alloc2"
 	bitmap "github.com/funny-falcon/highloadcup2018/bitmap2"
@@ -343,6 +342,9 @@ func InsertAccount(accin *AccountIn) {
 		ix := InterestStrings.Add(interest, acc.Uid)
 		SetInterest(acc.Uid, int32(ix-1))
 		//acc.SetInterest(ix - 1)
+		InterestJoinedGroups[GetJoinYear(acc.Joined)][ix-1]++
+		InterestBirthGroups[GetBirthYear(acc.Birth)][ix-1]++
+		InterestCountryGroups[acc.Country][ix-1]++
 	}
 	var smallImpl = likesImplPool.Get().(*bitmap.SmallImpl)
 	smallImpl.Size = 0
@@ -354,8 +356,8 @@ func InsertAccount(accin *AccountIn) {
 	acc.Likes = likes.ForceAlloc()
 	likesImplPool.Put(smallImpl)
 
-	atomic.AddUint32(&CityGroups[acc.City][acc.StatusIx()+acc.SexIx()*3], 1)
-	atomic.AddUint32(&CountryGroups[acc.Country][acc.StatusIx()+acc.SexIx()*3], 1)
+	CityGroups[acc.City][acc.StatusIx()+acc.SexIx()*3]++
+	CountryGroups[acc.Country][acc.StatusIx()+acc.SexIx()*3]++
 
 	SetSmallAccount(acc.Uid, acc.SmallAccount())
 }
@@ -415,6 +417,16 @@ func UpdateAccount(acc *Account, accin *AccountIn) bool {
 		acc.Code = uint8(PhoneCodesStrings.Add(code, acc.Uid))
 	}
 
+	var ids bitmap.BlockUnroll
+	for _, ix := range Interests[acc.Uid].Unroll(0, &ids) {
+		if len(accin.Interests) > 0 {
+			InterestStrings.Unset(uint32(ix+1), acc.Uid)
+		}
+		InterestJoinedGroups[GetJoinYear(acc.Joined)][ix]--
+		InterestBirthGroups[GetBirthYear(acc.Birth)][ix]--
+		InterestCountryGroups[acc.Country][ix]--
+	}
+
 	if accin.Birth != 0 {
 		byear := GetBirthYear(acc.Birth)
 		nbyear := GetBirthYear(accin.Birth)
@@ -435,8 +447,9 @@ func UpdateAccount(acc *Account, accin *AccountIn) bool {
 		}
 	}
 
-	atomic.AddUint32(&CountryGroups[acc.Country][acc.StatusIx()+acc.SexIx()*3], ^uint32(0))
-	atomic.AddUint32(&CityGroups[acc.City][acc.StatusIx()+acc.SexIx()*3], ^uint32(0))
+	CountryGroups[acc.Country][acc.StatusIx()+acc.SexIx()*3]--
+	CityGroups[acc.City][acc.StatusIx()+acc.SexIx()*3]--
+
 	if accin.Country != "" {
 		oldCountry := CountryStrings.GetStr(uint32(acc.Country))
 		if oldCountry != accin.Country {
@@ -522,24 +535,25 @@ func UpdateAccount(acc *Account, accin *AccountIn) bool {
 			acc.Status = newStatus
 		}
 	}
-	atomic.AddUint32(&CountryGroups[acc.Country][acc.StatusIx()+acc.SexIx()*3], 1)
-	atomic.AddUint32(&CityGroups[acc.City][acc.StatusIx()+acc.SexIx()*3], 1)
+	CountryGroups[acc.Country][acc.StatusIx()+acc.SexIx()*3]++
+	CityGroups[acc.City][acc.StatusIx()+acc.SexIx()*3]++
 
 	if len(accin.Interests) > 0 {
 		var newIntersets bitmap.Block
 		for _, interest := range accin.Interests {
 			ix := InterestStrings.Add(interest, acc.Uid)
 			newIntersets.Set(int32(ix - 1))
+			InterestJoinedGroups[GetJoinYear(acc.Joined)][ix-1]++
+			InterestBirthGroups[GetBirthYear(acc.Birth)][ix-1]++
+			InterestCountryGroups[acc.Country][ix-1]++
 		}
-		oldInterests := GetInterest(acc.Uid)
-
-		var ids bitmap.BlockUnroll
-		remove := oldInterests.RemoveNew(&newIntersets)
-		for _, ix := range remove.Unroll(0, &ids) {
-			InterestStrings.Unset(uint32(ix+1), acc.Uid)
-		}
-
 		SetInterests(acc.Uid, newIntersets)
+	} else {
+		for _, ix := range Interests[acc.Uid].Unroll(0, &ids) {
+			InterestJoinedGroups[GetJoinYear(acc.Joined)][ix]++
+			InterestBirthGroups[GetBirthYear(acc.Birth)][ix]++
+			InterestCountryGroups[acc.Country][ix]++
+		}
 	}
 
 	SetSmallAccount(acc.Uid, acc.SmallAccount())

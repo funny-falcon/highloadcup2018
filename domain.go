@@ -434,3 +434,6 @@ const LikeCntMask = (1 << LikeUidShift) - 1
 
 var CityGroups [1000][6]uint32
 var CountryGroups [100][6]uint32
+var InterestJoinedGroups [10][100]uint32
+var InterestBirthGroups [61][100]uint32
+var InterestCountryGroups [100][100]uint32

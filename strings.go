@@ -260,6 +260,10 @@ func (ss *SomeStrings) GetMap(ix uint32) bitmap.IMutBitmap {
 	return ss.Maps[ix-1]
 }
 
+func (ss *SomeStrings) Set(ix uint32, i int32) {
+	ss.GetMap(ix).Set(i)
+}
+
 func (ss *SomeStrings) Unset(ix uint32, i int32) {
 	ss.GetMap(ix).Unset(i)
 }

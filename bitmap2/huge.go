@@ -82,9 +82,11 @@ func (h *Huge) FetchAndNext(span int32) (*Block, int32) {
 	last := span - BlockSize
 	if k > BlockLen && arefBlock(h.p, k/BlockLen-1).Empty() {
 		last -= BlockSize
-		if k > 2*BlockLen && arefBlock(h.p, k/BlockLen-2).Empty() {
-			last -= BlockSize
-		}
+		/*
+			if k > 2*BlockLen && arefBlock(h.p, k/BlockLen-2).Empty() {
+				last -= BlockSize
+			}
+		*/
 	}
 	return arefBlock(h.p, k/BlockLen), last
 }

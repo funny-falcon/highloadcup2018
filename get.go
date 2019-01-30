@@ -547,6 +547,8 @@ func doGroup(ctx *Request) {
 	countryId := 0
 	sexId := 0
 	statusId := 0
+	birthId := 0
+	joinId := 0
 	otherFilters := false
 
 	for _, kv := range ctx.Args {
@@ -668,6 +670,7 @@ func doGroup(ctx *Request) {
 					emptyRes = true
 					return
 				}
+				birthId = year + 1 - 1950
 				otherFilters = true
 				iterators = append(iterators, &BirthYearIndexes[year-1950])
 			case "joined":
@@ -682,6 +685,7 @@ func doGroup(ctx *Request) {
 					emptyRes = true
 					return
 				}
+				joinId = year + 1 - 2011
 				otherFilters = true
 				iterators = append(iterators, &JoinYearIndexes[year-2011])
 			case "interests":
@@ -750,6 +754,28 @@ func doGroup(ctx *Request) {
 			for i := range InterestStrings.Arr {
 				groups[i].s = InterestStrings.Maps[i].GetSize()
 			}
+		case 1:
+			ok := true
+			switch {
+			case joinId != 0:
+				for ix, cnt := range InterestJoinedGroups[joinId-1][:len(groups)] {
+					groups[ix].s = cnt
+				}
+			case birthId != 0:
+				for ix, cnt := range InterestBirthGroups[birthId-1][:len(groups)] {
+					groups[ix].s = cnt
+				}
+			case countryId != 0:
+				for ix, cnt := range InterestCountryGroups[countryId][:len(groups)] {
+					groups[ix].s = cnt
+				}
+			default:
+				ok = false
+			}
+			if ok {
+				break
+			}
+			fallthrough
 		default:
 			//iterators = append(iterators, &InterestStrings.NotNull)
 			//iterator = bitmap.Materialize(bitmap.NewAndBitmap(iterators))
