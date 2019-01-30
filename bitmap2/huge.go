@@ -79,7 +79,25 @@ func (h *Huge) FetchAndNext(span int32) (*Block, int32) {
 	if k >= len(h.B) {
 		return &ZeroBlock, h.LastSpan()
 	}
-	return arefBlock(h.p, k/BlockLen), span - BlockSize
+	last := span - BlockSize
+	if k > BlockLen && arefBlock(h.p, k/BlockLen-1).Empty() {
+		last -= BlockSize
+		if k > 2*BlockLen && arefBlock(h.p, k/BlockLen-2).Empty() {
+			last -= BlockSize
+		}
+	}
+	return arefBlock(h.p, k/BlockLen), last
+}
+
+func (h *Huge) Loop(f func([]int32) bool) {
+	var un BlockUnroll
+	for k := len(h.B) - BlockLen; k >= 0; k -= BlockLen {
+		span := int32(k * 8)
+		bl := arefBlock(h.p, k/BlockLen)
+		if !bl.Empty() && !f(bl.Unroll(span, &un)) {
+			break
+		}
+	}
 }
 
 /*

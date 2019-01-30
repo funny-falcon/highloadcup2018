@@ -78,6 +78,12 @@ type AndBitmap struct {
 }
 
 func NewAndBitmap(bm []IBitmap) IBitmap {
+	if len(bm) == 0 {
+		return EmptyMap
+	}
+	if len(bm) == 1 {
+		return bm[0]
+	}
 	am := &AndBitmap{append([]IBitmap(nil), bm...)}
 	sort.Slice(am.B, func(i, j int) bool {
 		return SizeOf(am.B[i]) < SizeOf(am.B[j])
@@ -85,17 +91,13 @@ func NewAndBitmap(bm []IBitmap) IBitmap {
 	if SizeOf(am.B[0]) == 0 {
 		return EmptyMap
 	}
-	if len(bm) == 1 {
-		return am.B[0]
-	}
 	if len(bm) == 2 {
-		hg1, ok1 := bm[0].(*Huge)
-		hg2, ok2 := bm[1].(*Huge)
+		hg1, ok1 := am.B[0].(*Huge)
+		hg2, ok2 := am.B[1].(*Huge)
 		if ok1 && ok2 {
 			return &And2HugeBitmap{hg1, hg2}
-			//return And2Huge(hg1, hg2)
 		} else {
-			return &And2Bitmap{bm[0], bm[1]}
+			return &And2Bitmap{am.B[0], am.B[1]}
 		}
 	}
 	return am
@@ -219,14 +221,24 @@ type OrBitmap struct {
 
 func NewOrBitmap(bm []IBitmap) IBitmap {
 	ob := &OrBitmap{B: make([]IBitmap, 0, len(bm))}
+	oh := make([]*Huge, 0, len(bm))
 	for _, b := range bm {
 		if SizeOf(b) == 0 {
 			continue
 		}
 		ob.B = append(ob.B, b)
+		if h, ok := b.(*Huge); ok {
+			oh = append(oh, h)
+		}
 	}
 	if len(ob.B) == 0 {
 		return EmptyMap
+	}
+	if len(ob.B) == 1 {
+		return ob.B[0]
+	}
+	if len(ob.B) == len(oh) {
+		return &OrHugeBitmap{M: oh}
 	}
 	return ob
 }
@@ -304,4 +316,37 @@ func (ob *OrIterator) SiftUp(i int) {
 		i = c1
 	}
 	ob.It[i] = el
+}
+
+type OrHugeBitmap struct {
+	M []*Huge
+}
+
+func (oh *OrHugeBitmap) Iterator() (Iterator, int32) {
+	last := int32(NoNext)
+	for _, m := range oh.M {
+		l := m.LastSpan()
+		if l > last {
+			last = l
+		}
+	}
+	return &OrHugeIterator{M: oh.M}, last
+}
+
+type OrHugeIterator struct {
+	M []*Huge
+	B Block
+}
+
+func (oh *OrHugeIterator) FetchAndNext(span int32) (*Block, int32) {
+	oh.B = ZeroBlock
+	last := int32(NoNext)
+	for _, m := range oh.M {
+		b, l := m.FetchAndNext(span)
+		oh.B.Union(b)
+		if l > last {
+			last = l
+		}
+	}
+	return &oh.B, last
 }
