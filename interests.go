@@ -7,7 +7,7 @@ import (
 )
 
 type InterestBlock [16]uint8
-type InterestMask [4]uint32
+type InterestMask [2]uint64
 
 var Interests = make([]InterestBlock, Init)
 
@@ -46,8 +46,6 @@ func (i *InterestBlock) Mask() InterestMask {
 }
 
 func (mi InterestMask) IntersectCount(mo InterestMask) uint32 {
-	return uint32(bits.OnesCount32(mi[0]&mo[0]) +
-		bits.OnesCount32(mi[1]&mo[1]) +
-		bits.OnesCount32(mi[2]&mo[2]) +
-		bits.OnesCount32(mi[3]&mo[3]))
+	return uint32(bits.OnesCount64(mi[0]&mo[0]) +
+		bits.OnesCount64(mi[1]&mo[1]))
 }

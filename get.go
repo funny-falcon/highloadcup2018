@@ -858,30 +858,30 @@ func doGroup(ctx *Request) {
 			groups[k+2].u = uint32(i<<8) + 2
 		}
 		groups = groups[:ngroups]
-		var mapSmallAcc func(acc SmallAccount, c uint32)
+		var mapSmallAcc func(acc SmallerAccount, c uint32)
 		switch groupBy {
 		case GroupByCity:
-			mapSmallAcc = func(acc SmallAccount, c uint32) { groups[acc.City].s += c }
+			mapSmallAcc = func(acc SmallerAccount, c uint32) { groups[acc.City].s += c }
 		case GroupByCountry:
-			mapSmallAcc = func(acc SmallAccount, c uint32) { groups[acc.Country].s += c }
+			mapSmallAcc = func(acc SmallerAccount, c uint32) { groups[acc.Country].s += c }
 		case GroupBySex:
-			mapSmallAcc = func(acc SmallAccount, c uint32) { groups[acc.SexIx()].s += c }
+			mapSmallAcc = func(acc SmallerAccount, c uint32) { groups[acc.SexIx()].s += c }
 		case GroupByStatus:
-			mapSmallAcc = func(acc SmallAccount, c uint32) { groups[acc.Status()-1].s += c }
+			mapSmallAcc = func(acc SmallerAccount, c uint32) { groups[acc.Status()-1].s += c }
 		case GroupByCitySex:
-			mapSmallAcc = func(acc SmallAccount, c uint32) {
+			mapSmallAcc = func(acc SmallerAccount, c uint32) {
 				groups[int(acc.City)*2+acc.SexIx()].s += c
 			}
 		case GroupByCityStatus:
-			mapSmallAcc = func(acc SmallAccount, c uint32) {
+			mapSmallAcc = func(acc SmallerAccount, c uint32) {
 				groups[int(acc.City)*3+acc.Status()-1].s += c
 			}
 		case GroupByCountrySex:
-			mapSmallAcc = func(acc SmallAccount, c uint32) {
+			mapSmallAcc = func(acc SmallerAccount, c uint32) {
 				groups[int(acc.Country)*2+acc.SexIx()].s += c
 			}
 		case GroupByCountryStatus:
-			mapSmallAcc = func(acc SmallAccount, c uint32) {
+			mapSmallAcc = func(acc SmallerAccount, c uint32) {
 				groups[int(acc.Country)*3+acc.Status()-1].s += c
 			}
 		}
@@ -909,7 +909,7 @@ func doGroup(ctx *Request) {
 			}
 		} else if !otherFilters {
 			var iterLine func(*[6]uint32)
-			var acc SmallAccount
+			var acc SmallerAccount
 			if sexId != 0 && statusId != 0 {
 				iterLine = func(line *[6]uint32) {
 					i := statusId - 1
@@ -978,7 +978,7 @@ func doGroup(ctx *Request) {
 		} else {
 			mapper := func(u []int32) bool {
 				for _, uid := range u {
-					mapSmallAcc(GetSmallAccount(uid), 1)
+					mapSmallAcc(GetSmallerAccount(uid), 1)
 				}
 				return true
 			}

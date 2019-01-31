@@ -7,7 +7,7 @@ type Looper interface {
 }
 
 type LoopBlocker interface {
-	LoopBlock(func(span int32, bl uint32) bool)
+	LoopBlock(func(span int32, bl uint64) bool)
 }
 
 func Loop(m LoopBlocker, f func([]int32) bool) {
@@ -16,7 +16,7 @@ func Loop(m LoopBlocker, f func([]int32) bool) {
 		return
 	}
 	var un Unrolled
-	m.LoopBlock(func(span int32, bl uint32) bool {
+	m.LoopBlock(func(span int32, bl uint64) bool {
 		return f(Unroll(bl, span, &un))
 	})
 }
@@ -36,8 +36,8 @@ func Count(m LoopBlocker) uint32 {
 			return true
 		})
 	} else {
-		m.LoopBlock(func(_ int32, bl uint32) bool {
-			sum += bits.OnesCount32(bl)
+		m.LoopBlock(func(_ int32, bl uint64) bool {
+			sum += bits.OnesCount64(bl)
 			return true
 		})
 	}

@@ -5,8 +5,8 @@ import (
 	"unsafe"
 )
 
-func Set(u []uint32, id int32) bool {
-	k, b := id/32, uint32(1)<<uint32(id&31)
+func Set(u []uint64, id int32) bool {
+	k, b := id/64, uint64(1)<<uint32(id&63)
 	v := u[k]
 	if v&b == 0 {
 		u[k] = v | b
@@ -15,8 +15,8 @@ func Set(u []uint32, id int32) bool {
 	return false
 }
 
-func Unset(u []uint32, id int32) bool {
-	k, b := id/32, uint32(1)<<uint32(id&31)
+func Unset(u []uint64, id int32) bool {
+	k, b := id/64, uint64(1)<<uint32(id&63)
 	v := u[k]
 	if v&b != 0 {
 		u[k] = v ^ b
@@ -25,18 +25,18 @@ func Unset(u []uint32, id int32) bool {
 	return false
 }
 
-func Has(u []uint32, id int32) bool {
-	k, b := int(id/32), uint32(1)<<uint32(id&31)
-	return *arefu32(ptr0_u32(u), k)&b != 0
+func Has(u []uint64, id int32) bool {
+	k, b := int(id/64), uint64(1)<<uint32(id&63)
+	return *arefu64(ptr0_u64(u), k)&b != 0
 	//return u[k]&b != 0
 }
 
-type Unrolled [32]int32
+type Unrolled [64]int32
 
-func Unroll(v uint32, span int32, r *Unrolled) []int32 {
+func Unroll(v uint64, span int32, r *Unrolled) []int32 {
 	rp := uintptr(unsafe.Pointer(r))
-	p := rp + 31*4
-	for i := 0; i < 2; i++ {
+	p := rp + 63*4
+	for i := 0; i < 4; i++ {
 		if b := uintptr(v & 0xffff); b != 0 {
 			*aref32(p, 0) = span + 0
 			p -= uintptr((b << 2) & 4)
@@ -85,6 +85,10 @@ func arefu32(ptr uintptr, i int) *uint32 {
 	return (*uint32)(unsafe.Pointer(ptr + uintptr(i)*4))
 }
 
+func arefu64(ptr uintptr, i int) *uint64 {
+	return (*uint64)(unsafe.Pointer(ptr + uintptr(i)*8))
+}
+
 func aref16(ptr uintptr, i int) *uint16 {
 	return (*uint16)(unsafe.Pointer(ptr + uintptr(i)*2))
 }
@@ -98,6 +102,10 @@ func ptr0_32(b []int32) uintptr {
 }
 
 func ptr0_u32(b []uint32) uintptr {
+	return uintptr(unsafe.Pointer(&b[0]))
+}
+
+func ptr0_u64(b []uint64) uintptr {
 	return uintptr(unsafe.Pointer(&b[0]))
 }
 

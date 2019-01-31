@@ -3,18 +3,18 @@ package bitmap3
 import "sort"
 
 type IBitmap interface {
-	LoopBlock(func(int32, uint32) bool)
-	GetL2() *[1536]uint32
-	GetBlock(int32) uint32
+	LoopBlock(func(int32, uint64) bool)
+	GetL2() *[384]uint64
+	GetBlock(int32) uint64
 	Has(int32) bool
 }
 
 type NullBitmap struct{}
 
 func (NullBitmap) Loop(f func([]int32) bool)          {}
-func (NullBitmap) LoopBlock(func(int32, uint32) bool) {}
-func (NullBitmap) GetL2() *[1536]uint32               { panic("no"); return nil }
-func (NullBitmap) GetBlock(int32) uint32              { return 0 }
+func (NullBitmap) LoopBlock(func(int32, uint64) bool) {}
+func (NullBitmap) GetL2() *[384]uint64                { panic("no"); return nil }
+func (NullBitmap) GetBlock(int32) uint64              { return 0 }
 func (NullBitmap) Has(int32) bool                     { return false }
 
 var nullL1 [48]uint32
@@ -23,9 +23,9 @@ type RawUids []int32
 
 func (r RawUids) Loop(f func([]int32) bool)        { f(r) }
 func (r RawUids) Count() uint32                    { return uint32(len(r)) }
-func (RawUids) LoopBlock(func(int32, uint32) bool) { panic("no") }
-func (RawUids) GetL2() *[1536]uint32               { panic("no"); return nil }
-func (RawUids) GetBlock(int32) uint32              { panic("no"); return 0 }
+func (RawUids) LoopBlock(func(int32, uint64) bool) { panic("no") }
+func (RawUids) GetL2() *[384]uint64                { panic("no"); return nil }
+func (RawUids) GetBlock(int32) uint64              { panic("no"); return 0 }
 func (RawUids) Has(int32) bool                     { panic("no"); return false }
 
 type RawWithMap struct {
@@ -33,9 +33,9 @@ type RawWithMap struct {
 	M IBitmap
 }
 
-func (RawWithMap) LoopBlock(func(int32, uint32) bool) { panic("no") }
-func (RawWithMap) GetL2() *[1536]uint32               { panic("no"); return nil }
-func (RawWithMap) GetBlock(int32) uint32              { panic("no"); return 0 }
+func (RawWithMap) LoopBlock(func(int32, uint64) bool) { panic("no") }
+func (RawWithMap) GetL2() *[384]uint64                { panic("no"); return nil }
+func (RawWithMap) GetBlock(int32) uint64              { panic("no"); return 0 }
 func (RawWithMap) Has(int32) bool                     { panic("no"); return false }
 
 func (r RawWithMap) Loop(f func([]int32) bool) {
@@ -52,10 +52,10 @@ func (r RawWithMap) Loop(f func([]int32) bool) {
 
 type AndBitmap struct {
 	Maps []IBitmap
-	L2   [1536]uint32
+	L2   [384]uint64
 
 	LastSpan  int32
-	LastBlock uint32
+	LastBlock uint64
 }
 
 func cnt(m IBitmap) uint32 {
@@ -88,7 +88,7 @@ func NewAndBitmap(maps []IBitmap) IBitmap {
 	})
 	bm := &AndBitmap{Maps: maps}
 	for i := range bm.L2 {
-		bm.L2[i] = ^uint32(0)
+		bm.L2[i] = ^uint64(0)
 	}
 	for _, m := range maps {
 		for i, v := range m.GetL2() {
@@ -98,18 +98,18 @@ func NewAndBitmap(maps []IBitmap) IBitmap {
 	return bm
 }
 
-func (bm *AndBitmap) LoopBlock(f func(int32, uint32) bool) {
+func (bm *AndBitmap) LoopBlock(f func(int32, uint64) bool) {
 	var l2u Unrolled
 	for l2ix := int32(len(bm.L2) - 1); l2ix >= 0; l2ix-- {
 		l2v := bm.L2[l2ix]
 		if l2v == 0 {
 			continue
 		}
-		l2ixb := l2ix * 32
+		l2ixb := l2ix * 64
 	l3loop:
 		for _, l3ix := range Unroll(l2v, l2ixb, &l2u) {
-			l3v := ^uint32(0)
-			l3ixb := l3ix * 32
+			l3v := ^uint64(0)
+			l3ixb := l3ix * 64
 			for _, m := range bm.Maps {
 				l3v &= m.GetBlock(l3ixb)
 				if l3v == 0 {
@@ -123,22 +123,22 @@ func (bm *AndBitmap) LoopBlock(f func(int32, uint32) bool) {
 	}
 }
 
-func (bm *AndBitmap) GetL2() *[1536]uint32 {
+func (bm *AndBitmap) GetL2() *[384]uint64 {
 	return &bm.L2
 }
 
-func (bm *AndBitmap) GetBlock(span int32) uint32 {
+func (bm *AndBitmap) GetBlock(span int32) uint64 {
 	if span == bm.LastSpan {
 		return bm.LastBlock
 	}
-	if !Has(bm.L2[:], span/32) {
+	if !Has(bm.L2[:], span/64) {
 		return 0
 	}
-	l3v := ^uint32(0)
+	l3v := ^uint64(0)
 	for _, m := range bm.Maps {
 		l3v &= m.GetBlock(span)
 		if l3v == 0 {
-			Unset(bm.L2[:], span/32)
+			Unset(bm.L2[:], span/64)
 			break
 		}
 	}
@@ -148,17 +148,17 @@ func (bm *AndBitmap) GetBlock(span int32) uint32 {
 }
 
 func (bm *AndBitmap) Has(ix int32) bool {
-	bl := bm.GetBlock(ix &^ 31)
-	b := uint32(1) << uint32(ix&31)
+	bl := bm.GetBlock(ix &^ 63)
+	b := uint64(1) << uint32(ix&63)
 	return bl&b != 0
 }
 
 type OrBitmap struct {
 	Maps []IBitmap
-	L2   [1536]uint32
+	L2   [384]uint64
 
 	LastSpan  int32
-	LastBlock uint32
+	LastBlock uint64
 }
 
 func NewOrBitmap(maps []IBitmap) IBitmap {
@@ -177,17 +177,17 @@ func NewOrBitmap(maps []IBitmap) IBitmap {
 	return bm
 }
 
-func (bm *OrBitmap) LoopBlock(f func(int32, uint32) bool) {
+func (bm *OrBitmap) LoopBlock(f func(int32, uint64) bool) {
 	var l2u Unrolled
 	for l2ix := int32(len(bm.L2) - 1); l2ix >= 0; l2ix-- {
 		l2v := bm.L2[l2ix]
 		if l2v == 0 {
 			continue
 		}
-		l2ixb := l2ix * 32
+		l2ixb := l2ix * 64
 		for _, l3ix := range Unroll(l2v, l2ixb, &l2u) {
-			l3v := uint32(0)
-			l3ixb := l3ix * 32
+			l3v := uint64(0)
+			l3ixb := l3ix * 64
 			for _, m := range bm.Maps {
 				l3v |= m.GetBlock(l3ixb)
 			}
@@ -198,18 +198,18 @@ func (bm *OrBitmap) LoopBlock(f func(int32, uint32) bool) {
 	}
 }
 
-func (bm *OrBitmap) GetL2() *[1536]uint32 {
+func (bm *OrBitmap) GetL2() *[384]uint64 {
 	return &bm.L2
 }
 
-func (bm *OrBitmap) GetBlock(span int32) uint32 {
+func (bm *OrBitmap) GetBlock(span int32) uint64 {
 	if span == bm.LastSpan {
 		return bm.LastBlock
 	}
-	if !Has(bm.L2[:], span/32) {
+	if !Has(bm.L2[:], span/64) {
 		return 0
 	}
-	l3v := uint32(0)
+	l3v := uint64(0)
 	for _, m := range bm.Maps {
 		l3v |= m.GetBlock(span)
 	}
@@ -219,7 +219,7 @@ func (bm *OrBitmap) GetBlock(span int32) uint32 {
 }
 
 func (bm *OrBitmap) Has(ix int32) bool {
-	bl := bm.GetBlock(ix &^ 31)
-	b := uint32(1) << uint32(ix&31)
+	bl := bm.GetBlock(ix &^ 63)
+	b := uint64(1) << uint32(ix&63)
 	return bl&b != 0
 }

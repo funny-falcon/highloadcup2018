@@ -59,14 +59,21 @@ type Account struct {
 }
 
 type SmallAccount struct {
-	Birth            int32
+	Birth int32
+	SmallerAccount
+}
+
+type SmallerAccount struct {
 	City             uint16
 	Country          uint8
 	StatusSexPremium uint8
 }
 
 func (a *Account) SmallAccount() SmallAccount {
-	s := SmallAccount{City: a.City, Country: a.Country, StatusSexPremium: a.Status, Birth: a.Birth}
+	s := SmallAccount{
+		SmallerAccount: SmallerAccount{City: a.City, Country: a.Country, StatusSexPremium: a.Status},
+		Birth:          a.Birth,
+	}
 	if a.Sex {
 		s.StatusSexPremium |= 4
 	}
@@ -76,19 +83,19 @@ func (a *Account) SmallAccount() SmallAccount {
 	return s
 }
 
-func (s SmallAccount) Status() int {
+func (s SmallerAccount) Status() int {
 	return int(s.StatusSexPremium & 3)
 }
 
-func (s SmallAccount) Sex() bool {
+func (s SmallerAccount) Sex() bool {
 	return s.StatusSexPremium&4 != 0
 }
 
-func (s SmallAccount) SexIx() int {
+func (s SmallerAccount) SexIx() int {
 	return int((s.StatusSexPremium & 4) >> 2)
 }
 
-func (s SmallAccount) Premium() bool {
+func (s SmallerAccount) Premium() bool {
 	return s.StatusSexPremium&8 != 0
 }
 
@@ -113,6 +120,7 @@ const Init = 1536 * 1024
 
 var Accounts = make([]Account, Init)
 var SmallAccounts = make([]SmallAccount, Init)
+var SmallerAccounts = make([]SmallerAccount, Init)
 var AccountsMap bitmap.Bitmap
 var MaxId int32
 
@@ -134,6 +142,7 @@ func SureAccount(i int32) *Account {
 		}
 		SureCapa(&Accounts, int(ln))
 		SureCapa(&SmallAccounts, int(ln))
+		SureCapa(&SmallerAccounts, int(ln))
 		SureCapa(&Interests, int(ln))
 	}
 	if i >= MaxId {
@@ -147,9 +156,11 @@ func SureAccount(i int32) *Account {
 
 func HasAccount(i int32) *Account {
 	if i >= MaxId {
+		//log.Printf("i > MaxId : %d > %d, Acc.Has:%v", i, MaxId, AccountsMap.Has(i))
 		return nil
 	}
 	if Accounts[i].Uid == 0 {
+		//log.Printf("Acc[%d].Uid == 0, Acc.Has:%v", i, AccountsMap.Has(i))
 		return nil
 	}
 	return &Accounts[i]
@@ -161,10 +172,15 @@ func RefAccount(i int32) *Account {
 
 func SetSmallAccount(i int32, s SmallAccount) {
 	SmallAccounts[i] = s
+	SmallerAccounts[i] = s.SmallerAccount
 }
 
 func GetSmallAccount(i int32) SmallAccount {
 	return SmallAccounts[i]
+}
+
+func GetSmallerAccount(i int32) SmallerAccount {
+	return SmallerAccounts[i]
 }
 
 func DomainFromEmail(e string) string {
