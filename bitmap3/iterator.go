@@ -1,5 +1,7 @@
 package bitmap3
 
+import "sort"
+
 type IBitmap interface {
 	LoopBlock(func(int32, uint32) bool)
 	GetL1() *[48]uint32
@@ -18,6 +20,39 @@ func (NullBitmap) Has(int32) bool                     { return false }
 
 var nullL1 [48]uint32
 
+type RawUids []int32
+
+func (r RawUids) Loop(f func([]int32) bool)        { f(r) }
+func (r RawUids) Count() uint32                    { return uint32(len(r)) }
+func (RawUids) LoopBlock(func(int32, uint32) bool) { panic("no") }
+func (RawUids) GetL1() *[48]uint32                 { panic("no"); return &nullL1 }
+func (RawUids) GetL2(int32) uint32                 { panic("no"); return 0 }
+func (RawUids) GetBlock(int32) uint32              { panic("no"); return 0 }
+func (RawUids) Has(int32) bool                     { panic("no"); return false }
+
+type RawWithMap struct {
+	R RawUids
+	M IBitmap
+}
+
+func (RawWithMap) LoopBlock(func(int32, uint32) bool) { panic("no") }
+func (RawWithMap) GetL1() *[48]uint32                 { panic("no"); return &nullL1 }
+func (RawWithMap) GetL2(int32) uint32                 { panic("no"); return 0 }
+func (RawWithMap) GetBlock(int32) uint32              { panic("no"); return 0 }
+func (RawWithMap) Has(int32) bool                     { panic("no"); return false }
+
+func (r RawWithMap) Loop(f func([]int32) bool) {
+	var s [1]int32
+	for _, uid := range r.R {
+		if r.M.Has(uid) {
+			s[0] = uid
+			if !f(s[:]) {
+				break
+			}
+		}
+	}
+}
+
 type AndBitmap struct {
 	Maps     []IBitmap
 	L1       [48]uint32
@@ -28,6 +63,13 @@ type AndBitmap struct {
 	LastBlock uint32
 }
 
+func cnt(m IBitmap) uint32 {
+	if c, ok := m.(Counter); ok {
+		return c.Count()
+	}
+	return 1 << 30
+}
+
 func NewAndBitmap(maps []IBitmap) IBitmap {
 	if len(maps) == 0 {
 		return NullBitmap{}
@@ -35,6 +77,18 @@ func NewAndBitmap(maps []IBitmap) IBitmap {
 	if len(maps) == 1 {
 		return maps[0]
 	}
+	maps = append([]IBitmap(nil), maps...)
+	for i, m := range maps {
+		if raw, ok := m.(RawUids); ok {
+			return &RawWithMap{
+				R: raw,
+				M: NewAndBitmap(append(maps[:i], maps[i+1:]...)),
+			}
+		}
+	}
+	sort.Slice(maps, func(i, j int) bool {
+		return cnt(maps[i]) < cnt(maps[j])
+	})
 	bm := &AndBitmap{Maps: maps}
 	for i := range bm.L1 {
 		bm.L1[i] = ^uint32(0)
@@ -61,12 +115,19 @@ func (bm *AndBitmap) LoopBlock(f func(int32, uint32) bool) {
 				bm.FillL2(l2ix)
 			}
 			l2v := bm.L2[l2ix]
+			if l2v == 0 {
+				continue
+			}
 			l2ixb := l2ix * 32
+		l3loop:
 			for _, l3ix := range Unroll(l2v, l2ixb, &l2u) {
 				l3v := ^uint32(0)
 				l3ixb := l3ix * 32
 				for _, m := range bm.Maps {
 					l3v &= m.GetBlock(l3ixb)
+					if l3v == 0 {
+						continue l3loop
+					}
 				}
 				if l3v != 0 && !f(l3ixb, l3v) {
 					return
@@ -106,6 +167,10 @@ func (bm *AndBitmap) GetBlock(span int32) uint32 {
 	l3v := ^uint32(0)
 	for _, m := range bm.Maps {
 		l3v &= m.GetBlock(span)
+		if l3v == 0 {
+			Unset(bm.L2[:], span/32)
+			break
+		}
 	}
 	bm.LastSpan = span
 	bm.LastBlock = l3v
@@ -124,6 +189,9 @@ func (bm *AndBitmap) FillL2(l2ix int32) {
 		l2v &= m.GetL2(l2ix)
 	}
 	bm.L2[l2ix] = l2v
+	if l2v == 0 {
+		Unset(bm.L1[:], l2ix)
+	}
 	Set(bm.L2Filled[:], l2ix)
 }
 

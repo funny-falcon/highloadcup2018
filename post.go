@@ -8,7 +8,7 @@ import (
 
 	jsoniter "github.com/json-iterator/go"
 
-	"github.com/funny-falcon/highloadcup2018/bitmap2"
+	bitmap "github.com/funny-falcon/highloadcup2018/bitmap3"
 )
 
 var globMutex sync.RWMutex
@@ -177,8 +177,8 @@ func doLikes(ctx *Request) bool {
 
 	globMutex.Lock()
 	for _, like := range likes {
-		bitmap2.GetSmall(&HasAccount(like.Liker).Likes).Set(like.Likee)
-		SureLikers(like.Likee, func(l *bitmap2.Likes) { l.SetTs(like.Liker, like.Ts) })
+		bitmap.GetSmall(&HasAccount(like.Liker).Likes).Set(like.Likee)
+		SureLikers(like.Likee, func(l *bitmap.Likes) { l.SetTs(like.Likee, like.Liker, like.Ts) })
 	}
 	globMutex.Unlock()
 

@@ -6,7 +6,7 @@ import (
 	"unsafe"
 
 	"github.com/funny-falcon/highloadcup2018/alloc2"
-	bitmap "github.com/funny-falcon/highloadcup2018/bitmap2"
+	bitmap "github.com/funny-falcon/highloadcup2018/bitmap3"
 )
 
 var StringAlloc alloc2.Simple
@@ -17,8 +17,8 @@ const ShardFind = (1 << 32) / StringShards
 type StringsTable struct {
 	Tbl     []uint32
 	Arr     []StringHandle
-	Null    bitmap.Huge
-	NotNull bitmap.Huge
+	Null    bitmap.Bitmap
+	NotNull bitmap.Bitmap
 }
 
 type StringHandle struct {
@@ -201,7 +201,7 @@ type SomeStrings struct {
 	sync.Mutex
 	StringsTable
 	Huge bool
-	Maps []bitmap.IMutBitmap
+	Maps []*bitmap.Bitmap
 }
 
 func (ss *SomeStrings) Add(str string, uid int32) uint32 {
@@ -216,11 +216,7 @@ func (ss *SomeStrings) Add(str string, uid int32) uint32 {
 
 	ix, _ := ss.Insert(str)
 	for int(ix) > len(ss.Maps) {
-		if ss.Huge {
-			ss.Maps = append(ss.Maps, &bitmap.Huge{})
-		} else {
-			ss.Maps = append(ss.Maps, &bitmap.Bitmap{})
-		}
+		ss.Maps = append(ss.Maps, &bitmap.Bitmap{})
 	}
 	ss.Maps[ix-1].Set(uid)
 	return ix
@@ -247,13 +243,7 @@ func (ss *SomeStrings) Stat() [9]int {
 }
 */
 
-type Index interface {
-	Set(i int32)
-	Unset(i int32)
-	Iterator(m int32) bitmap.Iterator
-}
-
-func (ss *SomeStrings) GetMap(ix uint32) bitmap.IMutBitmap {
+func (ss *SomeStrings) GetMap(ix uint32) *bitmap.Bitmap {
 	if ix == 0 {
 		return nil
 	}

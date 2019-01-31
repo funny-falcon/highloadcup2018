@@ -58,13 +58,16 @@ func (bm *Bitmap) GetL2(l2ix int32) uint32 {
 }
 
 func (bm *Bitmap) GetBlock(span int32) uint32 {
-	if !Has(bm.L1[:], span/(32*32)) {
-		return 0
-	}
-	if !Has(bm.L2[:], span/32) {
-		return 0
-	}
+	/*
+		if !Has(bm.L1[:], span/(32*32)) {
+			return 0
+		}
+		if !Has(bm.L2[:], span/32) {
+			return 0
+		}
+	*/
 	return bm.L3[span/32]
+	//return *arefu32(ptr0_u32(bm.L3[:]), int(span/32))
 }
 
 func (bm *Bitmap) Count() uint32 {

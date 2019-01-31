@@ -77,18 +77,32 @@ func (s *Likes) GetTs(id int32) int32 {
 		return 0
 	}
 	ix := searchSparseLikes(s.Data[:s.Size], id)
-	if ix < int(s.Size) && s.Data[ix].Uid>>8 == id {
-		return s.Data[ix].Ts
+	if ix < int(s.Size) && s.Data[ix].Uid == id {
+		ts := s.Data[ix].Ts
+		if ts < 0 {
+			return -ts
+		}
+		return ts
 	}
 	return 0
 }
 
-func AndLikes(likes []*Likes) []int32 {
-	res := make([]int32, 0, 50)
+func AndLikes(likes []*Likes) RawUids {
+	if len(likes) == 0 {
+		return nil
+	}
 	slices := make([][]LikesElem, len(likes))
 	for i, l := range likes {
 		slices[i] = l.Data[:l.Size]
 	}
+	if len(slices) == 1 {
+		res := make([]int32, len(slices[0]))
+		for i, el := range slices[0] {
+			res[i] = el.Uid
+		}
+		return res
+	}
+	res := make([]int32, 0, 50)
 	cur := int32(1 << 30)
 	curcnt := 0
 	cursl := 0

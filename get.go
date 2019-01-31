@@ -7,7 +7,8 @@ import (
 
 	jsoniter "github.com/json-iterator/go"
 
-	bitmap "github.com/funny-falcon/highloadcup2018/bitmap2"
+	"github.com/funny-falcon/highloadcup2018/bitmap3"
+	bitmap "github.com/funny-falcon/highloadcup2018/bitmap3"
 )
 
 func getHandler(ctx *Request, path string) {
@@ -413,6 +414,7 @@ func doFilter(ctx *Request) {
 				}
 			case "likes_contains":
 				likesStrs := strings.Split(val, ",")
+				likesMaps := make([]*bitmap.Likes, 0, len(likesStrs))
 				for _, likeS := range likesStrs {
 					n, err := strconv.Atoi(string(likeS))
 					if err != nil || n <= 0 || n >= int(MaxId) {
@@ -425,8 +427,14 @@ func doFilter(ctx *Request) {
 						emptyRes = true
 						return
 					}
-					maps = append(maps, w)
+					likesMaps = append(likesMaps, w)
 				}
+				likers := bitmap.AndLikes(likesMaps)
+				if len(likers) == 0 {
+					emptyRes = true
+					return
+				}
+				maps = append(maps, likers)
 			case "premium_now":
 				outFields.Premium = true
 				maps = append(maps, &PremiumNow)
@@ -474,7 +482,7 @@ func doFilter(ctx *Request) {
 
 	resAccs := make([]*Account, 0, limit)
 	if filter == nil {
-		bitmap.LoopMap(iterator, func(uids []int32) bool {
+		bitmap.Loop(iterator, func(uids []int32) bool {
 			for _, uid := range uids {
 				resAccs = append(resAccs, RefAccount(uid))
 				if len(resAccs) == limit {
@@ -484,7 +492,7 @@ func doFilter(ctx *Request) {
 			return true
 		})
 	} else {
-		bitmap.LoopMap(iterator, func(uids []int32) bool {
+		bitmap.Loop(iterator, func(uids []int32) bool {
 			for _, uid := range uids {
 				acc := RefAccount(uid)
 				if !filter(acc) {
@@ -711,7 +719,7 @@ func doGroup(ctx *Request) {
 					return
 				}
 				otherFilters = true
-				iterators = append(iterators, w)
+				iterators = append(iterators, bitmap.AndLikes([]*bitmap3.Likes{w}))
 			case "query_id":
 				// ignore
 			default:
@@ -743,31 +751,31 @@ func doGroup(ctx *Request) {
 	var groups []groupCounter
 	switch {
 	case groupBy == GroupByInterests:
-		groups = make([]groupCounter, len(InterestStrings.Arr))
+		groups = make([]groupCounter, len(InterestStrings.Arr)+1)
 		for i := range InterestStrings.Arr {
-			groups[i] = groupCounter{u: uint32(i + 1)}
+			groups[i+1] = groupCounter{u: uint32(i + 1)}
 		}
 
 		var iterator bitmap.IBitmap
 		switch len(iterators) {
 		case 0:
 			for i := range InterestStrings.Arr {
-				groups[i].s = InterestStrings.Maps[i].GetSize()
+				groups[i+1].s = InterestStrings.Maps[i].Count()
 			}
 		case 1:
 			ok := true
 			switch {
 			case joinId != 0:
-				for ix, cnt := range InterestJoinedGroups[joinId-1][:len(groups)] {
-					groups[ix].s = cnt
+				for ix, cnt := range InterestJoinedGroups[joinId-1][:len(groups)-1] {
+					groups[ix+1].s = cnt
 				}
 			case birthId != 0:
-				for ix, cnt := range InterestBirthGroups[birthId-1][:len(groups)] {
-					groups[ix].s = cnt
+				for ix, cnt := range InterestBirthGroups[birthId-1][:len(groups)-1] {
+					groups[ix+1].s = cnt
 				}
 			case countryId != 0:
-				for ix, cnt := range InterestCountryGroups[countryId][:len(groups)] {
-					groups[ix].s = cnt
+				for ix, cnt := range InterestCountryGroups[countryId][:len(groups)-1] {
+					groups[ix+1].s = cnt
 				}
 			default:
 				ok = false
@@ -777,39 +785,17 @@ func doGroup(ctx *Request) {
 			}
 			fallthrough
 		default:
-			//iterators = append(iterators, &InterestStrings.NotNull)
-			//iterator = bitmap.Materialize(bitmap.NewAndBitmap(iterators))
 			iterator = bitmap.NewAndBitmap(iterators)
-			//*
-			var counts bitmap.BlockUnroll
-			bitmap.LoopMap(iterator, func(u []int32) bool {
+			bitmap.Loop(iterator, func(u []int32) bool {
 				for _, uid := range u {
-					//Accounts[uid].Interests.UnrollCount(&counts)
-					int := GetInterest(uid)
-					int.UnrollCount(&counts)
+					for _, int := range GetInterest(uid) {
+						groups[int].s++
+					}
 				}
 				return true
 			})
-			for i, c := range counts[:len(groups)] {
-				groups[i].s = uint32(c)
-			}
-			//*/
-			/*
-				intIters := make([]bitmap.Iterator, len(InterestStrings.Maps))
-				for i, m := range InterestStrings.Maps {
-					intIters[i], _ = m.Iterator()
-				}
-				bitmap.LoopMapBlock(iterator, func(bl bitmap.Block, span int32) bool {
-					for i, m := range intIters {
-						pbl, _ := m.FetchAndNext(span)
-						block := *pbl
-						block.Intersect(&bl)
-						groups[i].s += float64(block.Count())
-					}
-					return true
-				})
-			//*/
 		}
+		groups = groups[1:]
 
 		groups = SortGroupLimit(limit, order, groups, func(idi, idj uint32) bool {
 			return InterestStrings.GetStr(idi) < InterestStrings.GetStr(idj)
@@ -835,16 +821,20 @@ func doGroup(ctx *Request) {
 		}
 		var ngroups int
 		var ncity int
-		var maps []bitmap.IMutBitmap
-		var nullIt bitmap.IBitmapSizer
-		var notNullIt bitmap.IBitmapSizer
+		var maps []bitmap.IBitmap
+		var nullIt bitmap.IBitmap
+		var notNullIt bitmap.IBitmap
 		if groupBy&GroupByCity != 0 {
 			ncity = len(CityStrings.Arr) + 1
-			maps = CityStrings.Maps
+			for _, m := range CityStrings.Maps {
+				maps = append(maps, m)
+			}
 			nullIt = &CityStrings.Null
 			notNullIt = &CityStrings.NotNull
 		} else if groupBy&GroupByCountry != 0 {
-			maps = CountryStrings.Maps
+			for _, m := range CountryStrings.Maps {
+				maps = append(maps, m)
+			}
 			ncity = len(CountryStrings.Arr) + 1
 			nullIt = &CountryStrings.Null
 			notNullIt = &CountryStrings.NotNull
@@ -905,9 +895,9 @@ func doGroup(ctx *Request) {
 				groups[StatusComplexIx-1].s = ComplexMap.Size
 			}
 		} else if len(iterators) == 0 && groupBy&(GroupByCountry|GroupByCity) == groupBy {
-			groups[0].s = nullIt.GetSize()
+			groups[0].s = bitmap.Count(nullIt)
 			for i, mp := range maps {
-				groups[i+1].s = mp.GetSize()
+				groups[i+1].s = bitmap.Count(mp)
 			}
 		} else if !otherFilters {
 			var iterLine func(*[6]uint32)
@@ -985,23 +975,23 @@ func doGroup(ctx *Request) {
 				return true
 			}
 			if groupBy&(GroupByCity|GroupByCountry) != 0 {
-				bitmap.LoopMap(bitmap.NewAndBitmap(append(iterators, notNullIt)), mapper)
+				bitmap.Loop(bitmap.NewAndBitmap(append(iterators, notNullIt)), mapper)
 			}
 			if nullIt != nil {
 				iterators = append(iterators, nullIt)
 			}
 			switch cityMult {
 			case 1:
-				groups[0].s = bitmap.CountMap(bitmap.NewAndBitmap(iterators))
+				groups[0].s = bitmap.Count(bitmap.NewAndBitmap(iterators))
 			case 2:
-				groups[0].s = bitmap.CountMap(bitmap.NewAndBitmap(append(iterators, &FemaleMap)))
-				groups[1].s = bitmap.CountMap(bitmap.NewAndBitmap(append(iterators, &MaleMap)))
+				groups[0].s = bitmap.Count(bitmap.NewAndBitmap(append(iterators, &FemaleMap)))
+				groups[1].s = bitmap.Count(bitmap.NewAndBitmap(append(iterators, &MaleMap)))
 			case 3:
-				groups[StatusFreeIx-1].s = bitmap.CountMap(
+				groups[StatusFreeIx-1].s = bitmap.Count(
 					bitmap.NewAndBitmap(append(iterators, &FreeMap)))
-				groups[StatusMeetingIx-1].s = bitmap.CountMap(
+				groups[StatusMeetingIx-1].s = bitmap.Count(
 					bitmap.NewAndBitmap(append(iterators, &MeetingMap)))
-				groups[StatusComplexIx-1].s = bitmap.CountMap(
+				groups[StatusComplexIx-1].s = bitmap.Count(
 					bitmap.NewAndBitmap(append(iterators, &ComplexMap)))
 				logf("ComplexMap size %d %v", ComplexMap.Size, groups[StatusComplexIx-1])
 				logf("Status counts: %v", groups[:3])
@@ -1182,18 +1172,15 @@ func doSuggest(ctx *Request, iid int) {
 			panic("no")
 		}
 		for _, ucnt := range likers.Data[:likers.Size] {
-			oid := ucnt.UidAndCnt >> 8
-			/*
-				if !sameSex.Has(oid) {
-					panic("no")
-					continue
-				}
-			*/
+			oid := ucnt.Uid
 			if filter != nil && !filter(oid) {
 				continue
 			}
 			//logf("oid %d", oid)
 			ots := ucnt.Ts
+			if ots < 0 {
+				ots = -ots
+			}
 			dlt := ots - ts
 			if dlt < 0 {
 				dlt = -dlt
@@ -1343,12 +1330,14 @@ func doRecommend(ctx *Request, iid int) {
 		maps = append(maps, &MaleMap)
 	}
 
-	var intIdsH bitmap.BlockUnroll
 	interests := GetInterest(id)
-	intIds := interests.Unroll(0, &intIdsH)
-	ormaps := make([]bitmap.IBitmap, len(intIds))
-	for i, ii := range intIds {
-		ormaps[i] = InterestStrings.Maps[ii]
+	mask := interests.Mask()
+	ormaps := make([]bitmap.IBitmap, 0, 16)
+	for _, ii := range interests {
+		if ii == 0 {
+			break
+		}
+		ormaps = append(ormaps, InterestStrings.Maps[ii-1])
 	}
 	maps = append(maps, bitmap.NewOrBitmap(ormaps))
 
@@ -1368,9 +1357,9 @@ func doRecommend(ctx *Request, iid int) {
 	}
 
 	for _, tmap := range tmaps {
-		bitmap.LoopMap(tmap, func(uids []int32) bool {
+		bitmap.Loop(tmap, func(uids []int32) bool {
 			for _, uid := range uids {
-				cnt := interests.IntersectNew(&Interests[uid]).CountV()
+				cnt := mask.IntersectCount(GetInterest(uid).Mask())
 				othacc := GetSmallAccount(uid)
 				recs.Add(othacc, uid, cnt)
 			}

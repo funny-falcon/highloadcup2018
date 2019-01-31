@@ -2,7 +2,6 @@ package alloc2
 
 import (
 	"fmt"
-	"log"
 	"sync"
 	"unsafe"
 )
@@ -124,11 +123,13 @@ func (s *Simple) Compact(pptr *uintptr) {
 }
 
 func (s *Simple) FreeFree() {
-	for _, free := range s.Free {
-		if err := munmap((*Chunk)(unsafe.Pointer(free.chunk))[:]); err != nil {
-			log.Fatal(err)
+	/*
+		for _, free := range s.Free {
+			if err := munmap((*Chunk)(unsafe.Pointer(free.chunk))[:]); err != nil {
+				log.Fatal(err)
+			}
+			s.TotalFree -= ChunkSize - 8
 		}
-		s.TotalFree -= ChunkSize - 8
-	}
-	s.Free = nil
+		s.Free = nil
+	*/
 }

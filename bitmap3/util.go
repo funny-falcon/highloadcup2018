@@ -26,8 +26,9 @@ func Unset(u []uint32, id int32) bool {
 }
 
 func Has(u []uint32, id int32) bool {
-	k, b := id/32, uint32(1)<<uint32(id&31)
-	return u[k]&b != 0
+	k, b := int(id/32), uint32(1)<<uint32(id&31)
+	return *arefu32(ptr0_u32(u), k)&b != 0
+	//return u[k]&b != 0
 }
 
 type Unrolled [32]int32
@@ -79,6 +80,11 @@ func Unroll(v uint32, span int32, r *Unrolled) []int32 {
 func aref32(ptr uintptr, i int) *int32 {
 	return (*int32)(unsafe.Pointer(ptr + uintptr(i)*4))
 }
+
+func arefu32(ptr uintptr, i int) *uint32 {
+	return (*uint32)(unsafe.Pointer(ptr + uintptr(i)*4))
+}
+
 func aref16(ptr uintptr, i int) *uint16 {
 	return (*uint16)(unsafe.Pointer(ptr + uintptr(i)*2))
 }
@@ -88,6 +94,10 @@ func aref8(ptr uintptr, i int) *uint8 {
 }
 
 func ptr0_32(b []int32) uintptr {
+	return uintptr(unsafe.Pointer(&b[0]))
+}
+
+func ptr0_u32(b []uint32) uintptr {
 	return uintptr(unsafe.Pointer(&b[0]))
 }
 

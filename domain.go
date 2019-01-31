@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	bitmap "github.com/funny-falcon/highloadcup2018/bitmap2"
+	bitmap "github.com/funny-falcon/highloadcup2018/bitmap3"
 )
 
 const (
@@ -113,8 +113,7 @@ const Init = 1536 * 1024
 
 var Accounts = make([]Account, Init)
 var SmallAccounts = make([]SmallAccount, Init)
-var Interests = make([]bitmap.Block, Init)
-var AccountsMap bitmap.Huge
+var AccountsMap bitmap.Bitmap
 var MaxId int32
 
 func SureCapa(slicePtr interface{}, capa int) {
@@ -168,22 +167,6 @@ func GetSmallAccount(i int32) SmallAccount {
 	return SmallAccounts[i]
 }
 
-func GetInterest(i int32) bitmap.Block {
-	return Interests[i]
-}
-
-func SetInterest(i int32, ix int32) {
-	Interests[i].Set(ix)
-}
-
-func SetInterests(i int32, b bitmap.Block) {
-	Interests[i] = b
-}
-
-func UnsetInterest(i int32, ix int32) {
-	Interests[i].Unset(ix)
-}
-
 func DomainFromEmail(e string) string {
 	ix := strings.LastIndexByte(e, '@')
 	return e[ix+1:]
@@ -198,28 +181,28 @@ func CodeFromPhone(p string) string {
 var EmailIndex UniqStrings
 var PhoneIndex UniqStrings
 
-var MaleMap = bitmap.Huge{}
-var FemaleMap = bitmap.Huge{}
-var FreeMap = bitmap.Huge{}
-var MeetingMap = bitmap.Huge{}
-var ComplexMap = bitmap.Huge{}
-var FreeOrMeetingMap = bitmap.Huge{}
-var MeetingOrComplexMap = bitmap.Huge{}
-var FreeOrComplexMap = bitmap.Huge{}
-var StatusMaps = func() [4][3]*bitmap.Huge {
-	r := [4][3]*bitmap.Huge{
+var MaleMap = bitmap.Bitmap{}
+var FemaleMap = bitmap.Bitmap{}
+var FreeMap = bitmap.Bitmap{}
+var MeetingMap = bitmap.Bitmap{}
+var ComplexMap = bitmap.Bitmap{}
+var FreeOrMeetingMap = bitmap.Bitmap{}
+var MeetingOrComplexMap = bitmap.Bitmap{}
+var FreeOrComplexMap = bitmap.Bitmap{}
+var StatusMaps = func() [4][3]*bitmap.Bitmap {
+	r := [4][3]*bitmap.Bitmap{
 		{},
 	}
-	r[StatusFreeIx] = [3]*bitmap.Huge{&FreeMap, &FreeOrMeetingMap, &FreeOrComplexMap}
-	r[StatusComplexIx] = [3]*bitmap.Huge{&ComplexMap, &FreeOrComplexMap, &MeetingOrComplexMap}
-	r[StatusMeetingIx] = [3]*bitmap.Huge{&MeetingMap, &FreeOrMeetingMap, &MeetingOrComplexMap}
+	r[StatusFreeIx] = [3]*bitmap.Bitmap{&FreeMap, &FreeOrMeetingMap, &FreeOrComplexMap}
+	r[StatusComplexIx] = [3]*bitmap.Bitmap{&ComplexMap, &FreeOrComplexMap, &MeetingOrComplexMap}
+	r[StatusMeetingIx] = [3]*bitmap.Bitmap{&MeetingMap, &FreeOrMeetingMap, &MeetingOrComplexMap}
 	return r
 }()
 
-var PremiumNow = bitmap.Huge{}
-var PremiumNotNow = bitmap.Huge{}
-var PremiumNull = bitmap.Huge{}
-var PremiumNotNull = bitmap.Huge{}
+var PremiumNow = bitmap.Bitmap{}
+var PremiumNotNow = bitmap.Bitmap{}
+var PremiumNull = bitmap.Bitmap{}
+var PremiumNotNull = bitmap.Bitmap{}
 
 var EmailGtIndexes [26]bitmap.Bitmap
 var EmailLtIndexes [26]bitmap.Bitmap
@@ -258,7 +241,7 @@ func GetBirthYear(ts int32) int32 {
 	return int32(time.Unix(int64(ts), 0).UTC().Year() - 1950)
 }
 
-var JoinYearIndexes [10]bitmap.Huge
+var JoinYearIndexes [10]bitmap.Bitmap
 
 func GetJoinYear(ts int32) int32 {
 	return int32(time.Unix(int64(ts), 0).UTC().Year() - 2011)
@@ -427,10 +410,6 @@ func GetLikers(i int32) *bitmap.Likes {
 	}
 	return bitmap.GetLikes(&Likers[i])
 }
-
-const LikeUidShift = 8
-const LikeUidMask = (^int32(0)) << LikeUidShift
-const LikeCntMask = (1 << LikeUidShift) - 1
 
 var CityGroups [1000][6]uint32
 var CountryGroups [100][6]uint32

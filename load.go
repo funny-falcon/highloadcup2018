@@ -14,7 +14,7 @@ import (
 	"sync"
 
 	"github.com/funny-falcon/highloadcup2018/alloc2"
-	bitmap "github.com/funny-falcon/highloadcup2018/bitmap2"
+	bitmap "github.com/funny-falcon/highloadcup2018/bitmap3"
 
 	jsoniter "github.com/json-iterator/go"
 )
@@ -340,7 +340,7 @@ func InsertAccount(accin *AccountIn) {
 	}
 	for _, interest := range accin.Interests {
 		ix := InterestStrings.Add(interest, acc.Uid)
-		SetInterest(acc.Uid, int32(ix-1))
+		SetInterest(acc.Uid, uint8(ix))
 		//acc.SetInterest(ix - 1)
 		InterestJoinedGroups[GetJoinYear(acc.Joined)][ix-1]++
 		InterestBirthGroups[GetBirthYear(acc.Birth)][ix-1]++
@@ -351,7 +351,7 @@ func InsertAccount(accin *AccountIn) {
 	likes := bitmap.Small{smallImpl}
 	for _, like := range accin.Likes {
 		likes.Set(like.Id)
-		SureLikers(like.Id, func(l *bitmap.Likes) { l.SetTs(acc.Uid, like.Ts) })
+		SureLikers(like.Id, func(l *bitmap.Likes) { l.SetTs(like.Id, acc.Uid, like.Ts) })
 	}
 	acc.Likes = likes.ForceAlloc()
 	likesImplPool.Put(smallImpl)
@@ -417,14 +417,16 @@ func UpdateAccount(acc *Account, accin *AccountIn) bool {
 		acc.Code = uint8(PhoneCodesStrings.Add(code, acc.Uid))
 	}
 
-	var ids bitmap.BlockUnroll
-	for _, ix := range Interests[acc.Uid].Unroll(0, &ids) {
-		if len(accin.Interests) > 0 {
-			InterestStrings.Unset(uint32(ix+1), acc.Uid)
+	for _, ix := range GetInterest(acc.Uid) {
+		if ix == 0 {
+			break
 		}
-		InterestJoinedGroups[GetJoinYear(acc.Joined)][ix]--
-		InterestBirthGroups[GetBirthYear(acc.Birth)][ix]--
-		InterestCountryGroups[acc.Country][ix]--
+		if len(accin.Interests) > 0 {
+			InterestStrings.Unset(uint32(ix), acc.Uid)
+		}
+		InterestJoinedGroups[GetJoinYear(acc.Joined)][ix-1]--
+		InterestBirthGroups[GetBirthYear(acc.Birth)][ix-1]--
+		InterestCountryGroups[acc.Country][ix-1]--
 	}
 
 	if accin.Birth != 0 {
@@ -539,20 +541,23 @@ func UpdateAccount(acc *Account, accin *AccountIn) bool {
 	CityGroups[acc.City][acc.StatusIx()+acc.SexIx()*3]++
 
 	if len(accin.Interests) > 0 {
-		var newIntersets bitmap.Block
+		var newIntersets InterestBlock
 		for _, interest := range accin.Interests {
 			ix := InterestStrings.Add(interest, acc.Uid)
-			newIntersets.Set(int32(ix - 1))
+			newIntersets.Set(uint8(ix))
 			InterestJoinedGroups[GetJoinYear(acc.Joined)][ix-1]++
 			InterestBirthGroups[GetBirthYear(acc.Birth)][ix-1]++
 			InterestCountryGroups[acc.Country][ix-1]++
 		}
 		SetInterests(acc.Uid, newIntersets)
 	} else {
-		for _, ix := range Interests[acc.Uid].Unroll(0, &ids) {
-			InterestJoinedGroups[GetJoinYear(acc.Joined)][ix]++
-			InterestBirthGroups[GetBirthYear(acc.Birth)][ix]++
-			InterestCountryGroups[acc.Country][ix]++
+		for _, ix := range GetInterest(acc.Uid) {
+			if ix == 0 {
+				break
+			}
+			InterestJoinedGroups[GetJoinYear(acc.Joined)][ix-1]++
+			InterestBirthGroups[GetBirthYear(acc.Birth)][ix-1]++
+			InterestCountryGroups[acc.Country][ix-1]++
 		}
 	}
 
