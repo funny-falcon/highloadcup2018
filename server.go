@@ -142,8 +142,10 @@ func HTTPHandler() {
 }
 
 func HTTPHandleFd(fd File, req *Request) bool {
-	*req = Request{}
-	req.File = fd
+	*req = Request{
+		File: fd,
+		Args: req.Args[:0],
+	}
 	err := req.Parse()
 	if err != nil {
 		log.Print(err)

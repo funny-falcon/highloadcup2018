@@ -138,7 +138,7 @@ func doFilter(ctx *Request) {
 				emaillt := GetEmailPrefix(email)
 				logf("emaillt %08x", emaillt)
 				filters = append(filters, func(_ int32, acc *Account) bool {
-					logf("EmailStart %08x", acc.EmailStart)
+					//logf("EmailStart %08x", acc.EmailStart)
 					return acc.EmailStart < emaillt
 				})
 				if len(email) > 4 {
@@ -831,21 +831,23 @@ func doGroup(ctx *Request) {
 		var ncity int
 		var maps []bitmap.IBitmap
 		var nullIt bitmap.IBitmap
-		var notNullIt bitmap.IBitmap
+		//var notNullIt bitmap.IBitmap
 		if groupBy&GroupByCity != 0 {
 			ncity = len(CityStrings.Arr) + 1
+			maps = make([]bitmap.IBitmap, 0, len(CityStrings.Maps))
 			for _, m := range CityStrings.Maps {
 				maps = append(maps, m)
 			}
 			nullIt = &CityStrings.Null
-			notNullIt = &CityStrings.NotNull
+			//notNullIt = &CityStrings.NotNull
 		} else if groupBy&GroupByCountry != 0 {
+			maps = make([]bitmap.IBitmap, 0, len(CountryStrings.Maps))
 			for _, m := range CountryStrings.Maps {
 				maps = append(maps, m)
 			}
 			ncity = len(CountryStrings.Arr) + 1
 			nullIt = &CountryStrings.Null
-			notNullIt = &CountryStrings.NotNull
+			//notNullIt = &CountryStrings.NotNull
 		} else {
 			ncity = 1
 		}
@@ -983,26 +985,29 @@ func doGroup(ctx *Request) {
 				return true
 			}
 			if groupBy&(GroupByCity|GroupByCountry) != 0 {
-				bitmap.Loop(bitmap.NewAndBitmap(append(iterators, notNullIt)), mapper)
-			}
-			if nullIt != nil {
-				iterators = append(iterators, nullIt)
-			}
-			switch cityMult {
-			case 1:
-				groups[0].s = bitmap.Count(bitmap.NewAndBitmap(iterators))
-			case 2:
-				groups[0].s = bitmap.Count(bitmap.NewAndBitmap(append(iterators, &FemaleMap)))
-				groups[1].s = bitmap.Count(bitmap.NewAndBitmap(append(iterators, &MaleMap)))
-			case 3:
-				groups[StatusFreeIx-1].s = bitmap.Count(
-					bitmap.NewAndBitmap(append(iterators, &FreeMap)))
-				groups[StatusMeetingIx-1].s = bitmap.Count(
-					bitmap.NewAndBitmap(append(iterators, &MeetingMap)))
-				groups[StatusComplexIx-1].s = bitmap.Count(
-					bitmap.NewAndBitmap(append(iterators, &ComplexMap)))
-				logf("ComplexMap size %d %v", ComplexMap.Size, groups[StatusComplexIx-1])
-				logf("Status counts: %v", groups[:3])
+				bitmap.Loop(bitmap.NewAndBitmap(iterators), mapper)
+			} else {
+				/*
+					if nullIt != nil {
+						iterators = append(iterators, nullIt)
+					}
+				*/
+				switch cityMult {
+				case 1:
+					groups[0].s = bitmap.Count(bitmap.NewAndBitmap(iterators))
+				case 2:
+					groups[0].s = bitmap.Count(bitmap.NewAndBitmap(append(iterators, &FemaleMap)))
+					groups[1].s = bitmap.Count(bitmap.NewAndBitmap(append(iterators, &MaleMap)))
+				case 3:
+					groups[StatusFreeIx-1].s = bitmap.Count(
+						bitmap.NewAndBitmap(append(iterators, &FreeMap)))
+					groups[StatusMeetingIx-1].s = bitmap.Count(
+						bitmap.NewAndBitmap(append(iterators, &MeetingMap)))
+					groups[StatusComplexIx-1].s = bitmap.Count(
+						bitmap.NewAndBitmap(append(iterators, &ComplexMap)))
+					logf("ComplexMap size %d %v", ComplexMap.Size, groups[StatusComplexIx-1])
+					logf("Status counts: %v", groups[:3])
+				}
 			}
 		}
 		groups = SortGroupLimit(limit, order, groups, func(idi, idj uint32) bool {
