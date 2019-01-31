@@ -417,17 +417,14 @@ func UpdateAccount(acc *Account, accin *AccountIn) bool {
 		acc.Code = uint8(PhoneCodesStrings.Add(code, acc.Uid))
 	}
 
-	for _, ix := range GetInterest(acc.Uid) {
-		if ix == 0 {
-			break
-		}
+	GetInterest(acc.Uid).Unroll(func(ix int32) {
 		if len(accin.Interests) > 0 {
 			InterestStrings.Unset(uint32(ix), acc.Uid)
 		}
 		InterestJoinedGroups[GetJoinYear(acc.Joined)][ix-1]--
 		InterestBirthGroups[GetBirthYear(acc.Birth)][ix-1]--
 		InterestCountryGroups[acc.Country][ix-1]--
-	}
+	})
 
 	if accin.Birth != 0 {
 		byear := GetBirthYear(acc.Birth)
@@ -544,7 +541,7 @@ func UpdateAccount(acc *Account, accin *AccountIn) bool {
 	CityGroups[acc.City][acc.StatusIx()+acc.SexIx()*3]++
 
 	if len(accin.Interests) > 0 {
-		var newIntersets InterestBlock
+		var newIntersets InterestMask
 		for _, interest := range accin.Interests {
 			ix := InterestStrings.Add(interest, acc.Uid)
 			newIntersets.Set(uint8(ix))
@@ -554,14 +551,11 @@ func UpdateAccount(acc *Account, accin *AccountIn) bool {
 		}
 		SetInterests(acc.Uid, newIntersets)
 	} else {
-		for _, ix := range GetInterest(acc.Uid) {
-			if ix == 0 {
-				break
-			}
+		GetInterest(acc.Uid).Unroll(func(ix int32) {
 			InterestJoinedGroups[GetJoinYear(acc.Joined)][ix-1]++
 			InterestBirthGroups[GetBirthYear(acc.Birth)][ix-1]++
 			InterestCountryGroups[acc.Country][ix-1]++
-		}
+		})
 	}
 
 	SetSmallAccount(acc.Uid, acc.SmallAccount())

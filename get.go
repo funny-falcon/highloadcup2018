@@ -796,9 +796,9 @@ func doGroup(ctx *Request) {
 			iterator = bitmap.NewAndBitmap(iterators)
 			bitmap.Loop(iterator, func(u []int32) bool {
 				for _, uid := range u {
-					for _, int := range GetInterest(uid) {
+					GetInterest(uid).Unroll(func(int int32) {
 						groups[int].s++
-					}
+					})
 				}
 				return true
 			})
@@ -1339,14 +1339,10 @@ func doRecommend(ctx *Request, iid int) {
 	}
 
 	interests := GetInterest(id)
-	mask := interests.Mask()
 	ormaps := make([]bitmap.IBitmap, 0, 16)
-	for _, ii := range interests {
-		if ii == 0 {
-			break
-		}
+	interests.Unroll(func(ii int32) {
 		ormaps = append(ormaps, InterestStrings.Maps[ii-1])
-	}
+	})
 	maps = append(maps, bitmap.NewOrBitmap(ormaps))
 
 	//rmap := bitmap.NewAndBitmap(maps)
@@ -1367,7 +1363,7 @@ func doRecommend(ctx *Request, iid int) {
 	for _, tmap := range tmaps {
 		bitmap.Loop(tmap, func(uids []int32) bool {
 			for _, uid := range uids {
-				cnt := mask.IntersectCount(GetInterest(uid).Mask())
+				cnt := interests.IntersectCount(*GetInterest(uid))
 				othacc := GetSmallAccount(uid)
 				recs.Add(othacc, uid, cnt)
 			}
