@@ -181,8 +181,10 @@ func CodeFromPhone(p string) string {
 var EmailIndex UniqStrings
 var PhoneIndex UniqStrings
 
-var MaleMap = bitmap.Bitmap{}
-var FemaleMap = bitmap.Bitmap{}
+//var MaleMap = bitmap.Bitmap{}
+//var FemaleMap = bitmap.Bitmap{}
+var MaleMap = bitmap.SexMap{Mask: bitmap.MaleMask}
+var FemaleMap = bitmap.SexMap{Mask: bitmap.FemaleMask}
 var FreeMap = bitmap.Bitmap{}
 var MeetingMap = bitmap.Bitmap{}
 var ComplexMap = bitmap.Bitmap{}

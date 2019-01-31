@@ -59,7 +59,7 @@ var EmptyGroupRes = []byte(`{"groups":[]}`)
 
 func doFilter(ctx *Request) {
 	maps := make([]bitmap.IBitmap, 0, 4)
-	filters := []func(*Account) bool{}
+	filters := []func(int32, *Account) bool{}
 
 	correct := true
 	emptyRes := false
@@ -90,8 +90,10 @@ func doFilter(ctx *Request) {
 				switch sval {
 				case "m":
 					maps = append(maps, &MaleMap)
+					//filters = append(filters, func(uid int32, _ *Account) bool { return uid&1 == 1 })
 				case "f":
 					maps = append(maps, &FemaleMap)
+					//filters = append(filters, func(uid int32, _ *Account) bool { return uid&1 == 0 })
 				default:
 					logf("sex_eq incorrect")
 					correct = false
@@ -111,11 +113,11 @@ func doFilter(ctx *Request) {
 				}
 				email := sval
 				emailgt := GetEmailPrefix(email)
-				filters = append(filters, func(acc *Account) bool {
+				filters = append(filters, func(_ int32, acc *Account) bool {
 					return acc.EmailStart >= emailgt
 				})
 				if len(email) > 4 {
-					filters = append(filters, func(acc *Account) bool {
+					filters = append(filters, func(_ int32, acc *Account) bool {
 						accEmail := EmailIndex.GetStr(acc.Email)
 						return accEmail > email
 					})
@@ -135,12 +137,12 @@ func doFilter(ctx *Request) {
 				email := sval
 				emaillt := GetEmailPrefix(email)
 				logf("emaillt %08x", emaillt)
-				filters = append(filters, func(acc *Account) bool {
+				filters = append(filters, func(_ int32, acc *Account) bool {
 					logf("EmailStart %08x", acc.EmailStart)
 					return acc.EmailStart < emaillt
 				})
 				if len(email) > 4 {
-					filters = append(filters, func(acc *Account) bool {
+					filters = append(filters, func(_ int32, acc *Account) bool {
 						accEmail := EmailIndex.GetStr(acc.Email)
 						return accEmail < email
 					})
@@ -341,7 +343,7 @@ func doFilter(ctx *Request) {
 					return
 				}
 				birth := int32(n)
-				filters = append(filters, func(acc *Account) bool {
+				filters = append(filters, func(_ int32, acc *Account) bool {
 					return acc.Birth > birth
 				})
 				birthYear := GetBirthYear(birth)
@@ -362,7 +364,7 @@ func doFilter(ctx *Request) {
 					return
 				}
 				birth := int32(n)
-				filters = append(filters, func(acc *Account) bool {
+				filters = append(filters, func(_ int32, acc *Account) bool {
 					return acc.Birth < birth
 				})
 				birthYear := GetBirthYear(birth)
@@ -475,6 +477,12 @@ func doFilter(ctx *Request) {
 
 	iterator := bitmap.IBitmap(&AccountsMap)
 	if len(maps) > 0 {
+		if len(maps) == 1 {
+			if _, ok := maps[0].(*bitmap.SexMap); ok {
+				//filters = append(filters, func(_ int32, acc *Account) bool { return acc.Uid != 0 })
+				maps = append(maps, &AccountsMap)
+			}
+		}
 		iterator = bitmap.NewAndBitmap(maps)
 		maps = nil
 	}
@@ -495,7 +503,7 @@ func doFilter(ctx *Request) {
 		bitmap.Loop(iterator, func(uids []int32) bool {
 			for _, uid := range uids {
 				acc := RefAccount(uid)
-				if !filter(acc) {
+				if !filter(uid, acc) {
 					continue
 				}
 				resAccs = append(resAccs, acc)
@@ -1455,7 +1463,7 @@ func outAccount(out *OutFields, acc *Account, stream *jsoniter.Stream) {
 	stream.WriteObjectEnd()
 }
 
-func combineFilters(filters []func(*Account) bool) func(*Account) bool {
+func combineFilters(filters []func(int32, *Account) bool) func(int32, *Account) bool {
 	if len(filters) == 0 {
 		return nil
 	}
@@ -1470,14 +1478,14 @@ func combineFilters(filters []func(*Account) bool) func(*Account) bool {
 	return filters[0]
 }
 
-func combineFilters2(f1, f2 func(*Account) bool) func(*Account) bool {
-	return func(acc *Account) bool {
-		return f1(acc) && f2(acc)
+func combineFilters2(f1, f2 func(int32, *Account) bool) func(int32, *Account) bool {
+	return func(id int32, acc *Account) bool {
+		return f1(id, acc) && f2(id, acc)
 	}
 }
 
-func combineFilters3(f1, f2, f3 func(*Account) bool) func(*Account) bool {
-	return func(acc *Account) bool {
-		return f1(acc) && f2(acc) && f3(acc)
+func combineFilters3(f1, f2, f3 func(int32, *Account) bool) func(int32, *Account) bool {
+	return func(id int32, acc *Account) bool {
+		return f1(id, acc) && f2(id, acc) && f3(id, acc)
 	}
 }

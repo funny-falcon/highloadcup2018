@@ -514,14 +514,17 @@ func UpdateAccount(acc *Account, accin *AccountIn) bool {
 	if accin.Sex != "" {
 		newSex := accin.Sex == "f"
 		if newSex != acc.Sex {
-			if acc.Sex {
-				MaleMap.Unset(acc.Uid)
-				FemaleMap.Set(acc.Uid)
-			} else {
-				MaleMap.Set(acc.Uid)
-				FemaleMap.Unset(acc.Uid)
-			}
-			acc.Sex = newSex
+			panic("no sex change")
+			/*
+				if acc.Sex {
+					MaleMap.Unset(acc.Uid)
+					FemaleMap.Set(acc.Uid)
+				} else {
+					MaleMap.Set(acc.Uid)
+					FemaleMap.Unset(acc.Uid)
+				}
+				acc.Sex = newSex
+			*/
 		}
 	}
 
