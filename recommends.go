@@ -5,6 +5,7 @@ type Recommends struct {
 	Limit     int
 	Birth     int32
 	Heapified bool
+	Interests InterestMask
 }
 
 type RecElem struct {
@@ -20,7 +21,7 @@ func (r *Recommends) Add(acc SmallAccount, uid int32, common uint32) {
 		if len(r.Accs) == r.Limit {
 			r.Heapify()
 		}
-	} else if r.LessAcc(r.Accs[0], el) {
+	} else if r.LessAcc(&r.Accs[0], &el) {
 		r.Accs[0] = el
 		r.SiftUp(0)
 	}
@@ -44,12 +45,18 @@ var recStatus = func() [4]uint8 {
 	return r
 }()
 
-func (r *Recommends) LessAcc(acci, accj RecElem) bool {
+func (r *Recommends) LessAcc(acci, accj *RecElem) bool {
 	if acci.Premium() != accj.Premium() {
 		return accj.Premium()
 	}
 	if recStatus[acci.Status()] != recStatus[accj.Status()] {
 		return recStatus[acci.Status()] < recStatus[accj.Status()]
+	}
+	if acci.Commons == 0 {
+		acci.Commons = r.Interests.IntersectCount(*GetInterest(acci.Uid))
+	}
+	if accj.Commons == 0 {
+		accj.Commons = r.Interests.IntersectCount(*GetInterest(accj.Uid))
 	}
 	if acci.Commons != accj.Commons {
 		return acci.Commons < accj.Commons
@@ -83,10 +90,10 @@ func (r *Recommends) SiftUp(i int) {
 	for i*2+1 < l {
 		c1 := i*2 + 1
 		c2 := c1 + 1
-		if c2 < l && r.LessAcc(r.Accs[c2], r.Accs[c1]) {
+		if c2 < l && r.LessAcc(&r.Accs[c2], &r.Accs[c1]) {
 			c1 = c2
 		}
-		if r.LessAcc(el, r.Accs[c1]) {
+		if r.LessAcc(&el, &r.Accs[c1]) {
 			break
 		}
 		r.Accs[i] = r.Accs[c1]

@@ -1,5 +1,7 @@
 package bitmap3
 
+import "unsafe"
+
 type Bitmap struct {
 	Size uint32
 	L2   [384]uint64
@@ -55,8 +57,8 @@ func (bm *Bitmap) GetBlock(span int32) uint64 {
 			return 0
 		}
 	*/
-	return bm.L3[span/64]
-	//return *arefu32(ptr0_u32(bm.L3[:]), int(span/32))
+	//return bm.L3[span/64]
+	return *arefu64(uintptr(unsafe.Pointer(&bm.L3)), int(span/64))
 }
 
 func (bm *Bitmap) Count() uint32 {

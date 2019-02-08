@@ -58,6 +58,9 @@ var EmptyFilterRes = []byte(`{"accounts":[]}`)
 var EmptyGroupRes = []byte(`{"groups":[]}`)
 
 func doFilter(ctx *Request) {
+	var r bitmap.ReleaseHolder
+	defer r.Release()
+
 	maps := make([]bitmap.IBitmap, 0, 4)
 	filters := []func(int32, *Account) bool{}
 
@@ -205,7 +208,7 @@ func doFilter(ctx *Request) {
 					emptyRes = true
 					return
 				}
-				maps = append(maps, bitmap.NewOrBitmap(orIters))
+				maps = append(maps, bitmap.NewOrBitmap(orIters, &r))
 			case "fname_null":
 				outFields.Fname = true
 				switch sval {
@@ -243,7 +246,7 @@ func doFilter(ctx *Request) {
 				for k := i; k < j; k++ {
 					orIters[k-i] = SnameStrings.GetMap(SnameSorted.Ix[k])
 				}
-				maps = append(maps, bitmap.NewOrBitmap(orIters))
+				maps = append(maps, bitmap.NewOrBitmap(orIters, &r))
 			case "sname_null":
 				outFields.Sname = true
 				switch sval {
@@ -322,7 +325,7 @@ func doFilter(ctx *Request) {
 					emptyRes = true
 					return
 				}
-				maps = append(maps, bitmap.NewOrBitmap(orIters))
+				maps = append(maps, bitmap.NewOrBitmap(orIters, &r))
 			case "city_null":
 				outFields.City = true
 				switch sval {
@@ -354,7 +357,7 @@ func doFilter(ctx *Request) {
 				for ; int(birthYear) < len(BirthYearIndexes); birthYear++ {
 					orIters = append(orIters, &BirthYearIndexes[birthYear])
 				}
-				maps = append(maps, bitmap.NewOrBitmap(orIters))
+				maps = append(maps, bitmap.NewOrBitmap(orIters, &r))
 			case "birth_lt":
 				outFields.Birth = true
 				n, err := strconv.Atoi(sval)
@@ -375,7 +378,7 @@ func doFilter(ctx *Request) {
 				for ; birthYear >= 0; birthYear-- {
 					orIters = append(orIters, &BirthYearIndexes[birthYear])
 				}
-				maps = append(maps, bitmap.NewOrBitmap(orIters))
+				maps = append(maps, bitmap.NewOrBitmap(orIters, &r))
 			case "birth_year":
 				outFields.Birth = true
 				year, err := strconv.Atoi(sval)
@@ -410,7 +413,7 @@ func doFilter(ctx *Request) {
 					return
 				}
 				if skey == "interests_any" {
-					maps = append(maps, bitmap.NewOrBitmap(iters))
+					maps = append(maps, bitmap.NewOrBitmap(iters, &r))
 				} else {
 					maps = append(maps, iters...)
 				}
@@ -1260,6 +1263,9 @@ Outter:
 }
 
 func doRecommend(ctx *Request, iid int) {
+	var r bitmap.ReleaseHolder
+	defer r.Release()
+
 	id := int32(iid)
 	if int(id) != iid {
 		ctx.SetStatusCode(404)
@@ -1337,40 +1343,67 @@ func doRecommend(ctx *Request, iid int) {
 		return
 	}
 
-	if acc.Sex {
-		maps = append(maps, &FemaleMap)
-	} else {
-		maps = append(maps, &MaleMap)
-	}
-
 	interests := GetInterest(id)
 	ormaps := make([]bitmap.IBitmap, 0, 16)
 	interests.Unroll(func(ii int32) {
 		ormaps = append(ormaps, InterestStrings.Maps[ii-1])
 	})
-	maps = append(maps, bitmap.NewOrBitmap(ormaps))
-
-	//rmap := bitmap.NewAndBitmap(maps)
+	if len(ormaps) == 0 {
+		logf("empty result")
+		ctx.SetStatusCode(200)
+		ctx.SetBody(EmptyFilterRes)
+		return
+	}
+	orr := bitmap.NewOrBitmap(ormaps, &r)
 
 	recs := Recommends{
-		Birth: acc.Birth,
-		Limit: limit,
+		Birth:     acc.Birth,
+		Limit:     limit,
+		Interests: *interests,
 	}
 
-	tmaps := []bitmap.IBitmap{
-		bitmap.NewAndBitmap(append(maps, &PremiumNow, &FreeMap)),
-		bitmap.NewAndBitmap(append(maps, &PremiumNow, &ComplexMap)),
-		bitmap.NewAndBitmap(append(maps, &PremiumNow, &MeetingMap)),
-		bitmap.NewAndBitmap(append(maps, &PremiumNotNow, &FreeMap)),
-		bitmap.NewAndBitmap(append(maps, &PremiumNotNow, &MeetingOrComplexMap)),
+	var tmaps [][]bitmap.IBitmap
+	maps = append(maps, orr)
+
+	maps = maps[:len(maps):len(maps)]
+	if acc.Sex {
+		tmaps = [][]bitmap.IBitmap{
+			append(maps, PremiumFreeFemale),
+			append(maps, PremiumMeetingOrComplexFemale),
+			/*
+				append(maps, PremiumComplexFemale),
+				append(maps, PremiumMeetingFemale),
+			*/
+		}
+		maps = append(maps, &FemaleMap)
+	} else {
+		tmaps = [][]bitmap.IBitmap{
+			append(maps, PremiumFreeMale),
+			append(maps, PremiumMeetingOrComplexMale),
+			/*
+				append(maps, PremiumComplexMale),
+				append(maps, PremiumMeetingMale),
+			*/
+		}
+		maps = append(maps, &MaleMap)
 	}
+	maps = maps[:len(maps):len(maps)]
+	tmaps = append(tmaps,
+		append(maps, &PremiumNotNow, &FreeMap),
+		append(maps, &PremiumNotNow, &MeetingOrComplexMap),
+	)
 
 	for _, tmap := range tmaps {
-		bitmap.Loop(tmap, func(uids []int32) bool {
+		bitmap.Loop(bitmap.NewAndBitmap(tmap), func(uids []int32) bool {
 			for _, uid := range uids {
-				cnt := interests.IntersectCount(*GetInterest(uid))
+				/*
+					cnt := interests.IntersectCount(*GetInterest(uid))
+					if cnt == 0 {
+						continue
+					}
+				*/
 				othacc := GetSmallAccount(uid)
-				recs.Add(othacc, uid, cnt)
+				recs.Add(othacc, uid, 0)
 			}
 			return true
 		})

@@ -222,6 +222,40 @@ var PremiumNotNow = bitmap.Bitmap{}
 var PremiumNull = bitmap.Bitmap{}
 var PremiumNotNull = bitmap.Bitmap{}
 
+var PremiumMale bitmap.IBitmap
+var PremiumFemale bitmap.IBitmap
+var PremiumFreeMale bitmap.IBitmap
+var PremiumFreeFemale bitmap.IBitmap
+var PremiumComplexMale bitmap.IBitmap
+var PremiumComplexFemale bitmap.IBitmap
+var PremiumMeetingMale bitmap.IBitmap
+var PremiumMeetingFemale bitmap.IBitmap
+var PremiumMeetingOrComplexMale bitmap.IBitmap
+var PremiumMeetingOrComplexFemale bitmap.IBitmap
+
+func RefreshIndexes() {
+	PremiumMale = bitmap.Materialize(
+		bitmap.NewAndBitmap([]bitmap.IBitmap{&PremiumNow, &MaleMap}))
+	PremiumFemale = bitmap.Materialize(
+		bitmap.NewAndBitmap([]bitmap.IBitmap{&PremiumNow, &FemaleMap}))
+	PremiumFreeMale = bitmap.Materialize(
+		bitmap.NewAndBitmap([]bitmap.IBitmap{&PremiumNow, &FreeMap, &MaleMap}))
+	PremiumFreeFemale = bitmap.Materialize(
+		bitmap.NewAndBitmap([]bitmap.IBitmap{&PremiumNow, &FreeMap, &FemaleMap}))
+	PremiumComplexMale = bitmap.Materialize(
+		bitmap.NewAndBitmap([]bitmap.IBitmap{&PremiumNow, &ComplexMap, &MaleMap}))
+	PremiumComplexFemale = bitmap.Materialize(
+		bitmap.NewAndBitmap([]bitmap.IBitmap{&PremiumNow, &ComplexMap, &FemaleMap}))
+	PremiumMeetingMale = bitmap.Materialize(
+		bitmap.NewAndBitmap([]bitmap.IBitmap{&PremiumNow, &MeetingMap, &MaleMap}))
+	PremiumMeetingFemale = bitmap.Materialize(
+		bitmap.NewAndBitmap([]bitmap.IBitmap{&PremiumNow, &MeetingMap, &FemaleMap}))
+	PremiumMeetingOrComplexMale = bitmap.Materialize(
+		bitmap.NewAndBitmap([]bitmap.IBitmap{&PremiumNow, &MeetingOrComplexMap, &MaleMap}))
+	PremiumMeetingOrComplexFemale = bitmap.Materialize(
+		bitmap.NewAndBitmap([]bitmap.IBitmap{&PremiumNow, &MeetingOrComplexMap, &FemaleMap}))
+}
+
 var EmailGtIndexes [26]bitmap.Bitmap
 var EmailLtIndexes [26]bitmap.Bitmap
 

@@ -33,7 +33,7 @@ func Has(u []uint64, id int32) bool {
 
 type Unrolled [64]int32
 
-func Unroll(v uint64, span int32, r *Unrolled) []int32 {
+func Unroll1(v uint64, span int32, r *Unrolled) []int32 {
 	rp := uintptr(unsafe.Pointer(r))
 	p := rp + 63*4
 	for i := 0; i < 4; i++ {
@@ -74,6 +74,164 @@ func Unroll(v uint64, span int32, r *Unrolled) []int32 {
 		v >>= 16
 		span += 16
 	}
+	return r[(p+4-rp)/4:]
+}
+
+func Unroll(v uint64, span int32, r *Unrolled) []int32 {
+	rp := uintptr(unsafe.Pointer(r))
+	p := rp + 63*4
+	if b := uintptr(v & 0xff); b != 0 {
+		*aref32(p, 0) = span + 0
+		p -= uintptr((b << 2) & 4)
+		*aref32(p, 0) = span + 1
+		p -= uintptr((b << 1) & 4)
+		*aref32(p, 0) = span + 2
+		p -= uintptr((b << 0) & 4)
+		*aref32(p, 0) = span + 3
+		p -= uintptr((b >> 1) & 4)
+		*aref32(p, 0) = span + 4
+		p -= uintptr((b >> 2) & 4)
+		*aref32(p, 0) = span + 5
+		p -= uintptr((b >> 3) & 4)
+		*aref32(p, 0) = span + 6
+		p -= uintptr((b >> 4) & 4)
+		*aref32(p, 0) = span + 7
+		p -= uintptr((b >> 5) & 4)
+	}
+	span += 8
+	if b := uintptr((v >> 8) & 0xff); b != 0 {
+		*aref32(p, 0) = span + 0
+		p -= uintptr((b << 2) & 4)
+		*aref32(p, 0) = span + 1
+		p -= uintptr((b << 1) & 4)
+		*aref32(p, 0) = span + 2
+		p -= uintptr((b << 0) & 4)
+		*aref32(p, 0) = span + 3
+		p -= uintptr((b >> 1) & 4)
+		*aref32(p, 0) = span + 4
+		p -= uintptr((b >> 2) & 4)
+		*aref32(p, 0) = span + 5
+		p -= uintptr((b >> 3) & 4)
+		*aref32(p, 0) = span + 6
+		p -= uintptr((b >> 4) & 4)
+		*aref32(p, 0) = span + 7
+		p -= uintptr((b >> 5) & 4)
+	}
+	span += 8
+	if b := uintptr((v >> 16) & 0xff); b != 0 {
+		*aref32(p, 0) = span + 0
+		p -= uintptr((b << 2) & 4)
+		*aref32(p, 0) = span + 1
+		p -= uintptr((b << 1) & 4)
+		*aref32(p, 0) = span + 2
+		p -= uintptr((b << 0) & 4)
+		*aref32(p, 0) = span + 3
+		p -= uintptr((b >> 1) & 4)
+		*aref32(p, 0) = span + 4
+		p -= uintptr((b >> 2) & 4)
+		*aref32(p, 0) = span + 5
+		p -= uintptr((b >> 3) & 4)
+		*aref32(p, 0) = span + 6
+		p -= uintptr((b >> 4) & 4)
+		*aref32(p, 0) = span + 7
+		p -= uintptr((b >> 5) & 4)
+	}
+	span += 8
+	if b := uintptr((v >> 24) & 0xff); b != 0 {
+		*aref32(p, 0) = span + 0
+		p -= uintptr((b << 2) & 4)
+		*aref32(p, 0) = span + 1
+		p -= uintptr((b << 1) & 4)
+		*aref32(p, 0) = span + 2
+		p -= uintptr((b << 0) & 4)
+		*aref32(p, 0) = span + 3
+		p -= uintptr((b >> 1) & 4)
+		*aref32(p, 0) = span + 4
+		p -= uintptr((b >> 2) & 4)
+		*aref32(p, 0) = span + 5
+		p -= uintptr((b >> 3) & 4)
+		*aref32(p, 0) = span + 6
+		p -= uintptr((b >> 4) & 4)
+		*aref32(p, 0) = span + 7
+		p -= uintptr((b >> 5) & 4)
+	}
+	span += 8
+	if b := uintptr((v >> 32) & 0xff); b != 0 {
+		*aref32(p, 0) = span + 0
+		p -= uintptr((b << 2) & 4)
+		*aref32(p, 0) = span + 1
+		p -= uintptr((b << 1) & 4)
+		*aref32(p, 0) = span + 2
+		p -= uintptr((b << 0) & 4)
+		*aref32(p, 0) = span + 3
+		p -= uintptr((b >> 1) & 4)
+		*aref32(p, 0) = span + 4
+		p -= uintptr((b >> 2) & 4)
+		*aref32(p, 0) = span + 5
+		p -= uintptr((b >> 3) & 4)
+		*aref32(p, 0) = span + 6
+		p -= uintptr((b >> 4) & 4)
+		*aref32(p, 0) = span + 7
+		p -= uintptr((b >> 5) & 4)
+	}
+	span += 8
+	if b := uintptr((v >> 40) & 0xff); b != 0 {
+		*aref32(p, 0) = span + 0
+		p -= uintptr((b << 2) & 4)
+		*aref32(p, 0) = span + 1
+		p -= uintptr((b << 1) & 4)
+		*aref32(p, 0) = span + 2
+		p -= uintptr((b << 0) & 4)
+		*aref32(p, 0) = span + 3
+		p -= uintptr((b >> 1) & 4)
+		*aref32(p, 0) = span + 4
+		p -= uintptr((b >> 2) & 4)
+		*aref32(p, 0) = span + 5
+		p -= uintptr((b >> 3) & 4)
+		*aref32(p, 0) = span + 6
+		p -= uintptr((b >> 4) & 4)
+		*aref32(p, 0) = span + 7
+		p -= uintptr((b >> 5) & 4)
+	}
+	span += 8
+	if b := uintptr((v >> 48) & 0xff); b != 0 {
+		*aref32(p, 0) = span + 0
+		p -= uintptr((b << 2) & 4)
+		*aref32(p, 0) = span + 1
+		p -= uintptr((b << 1) & 4)
+		*aref32(p, 0) = span + 2
+		p -= uintptr((b << 0) & 4)
+		*aref32(p, 0) = span + 3
+		p -= uintptr((b >> 1) & 4)
+		*aref32(p, 0) = span + 4
+		p -= uintptr((b >> 2) & 4)
+		*aref32(p, 0) = span + 5
+		p -= uintptr((b >> 3) & 4)
+		*aref32(p, 0) = span + 6
+		p -= uintptr((b >> 4) & 4)
+		*aref32(p, 0) = span + 7
+		p -= uintptr((b >> 5) & 4)
+	}
+	span += 8
+	if b := uintptr((v >> 56) & 0xff); b != 0 {
+		*aref32(p, 0) = span + 0
+		p -= uintptr((b << 2) & 4)
+		*aref32(p, 0) = span + 1
+		p -= uintptr((b << 1) & 4)
+		*aref32(p, 0) = span + 2
+		p -= uintptr((b << 0) & 4)
+		*aref32(p, 0) = span + 3
+		p -= uintptr((b >> 1) & 4)
+		*aref32(p, 0) = span + 4
+		p -= uintptr((b >> 2) & 4)
+		*aref32(p, 0) = span + 5
+		p -= uintptr((b >> 3) & 4)
+		*aref32(p, 0) = span + 6
+		p -= uintptr((b >> 4) & 4)
+		*aref32(p, 0) = span + 7
+		p -= uintptr((b >> 5) & 4)
+	}
+	span += 8
 	return r[(p+4-rp)/4:]
 }
 

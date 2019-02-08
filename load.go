@@ -220,6 +220,7 @@ func Load() {
 		}()
 	}
 	wg.Wait()
+	RefreshIndexes()
 	debug.SetGCPercent(30)
 
 	fmt.Println("LikesAlloc ", bitmap.LikesAlloc.TotalAlloc, bitmap.LikesAlloc.TotalFree,
