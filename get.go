@@ -4,6 +4,7 @@ import (
 	"math/bits"
 	"strconv"
 	"strings"
+	"sync"
 
 	jsoniter "github.com/json-iterator/go"
 
@@ -545,13 +546,16 @@ const (
 	GroupByCountryStatus = GroupByCountry | GroupByStatus
 )
 
-type GroupBy struct {
-	Sex       bool
-	Status    bool
-	City      bool
-	Country   bool
-	Interests bool
+type GroupCacheKey struct {
+	groupBy            uint32
+	cityId, countryId  int
+	sexId, statusId    int
+	birthId, joinId    int
+	interestId, likeId int
 }
+
+var groupsCache = make(map[GroupCacheKey][]groupCounter)
+var groupsCacheMtx sync.Mutex
 
 func doGroup(ctx *Request) {
 	logf("doGroup")
@@ -568,6 +572,8 @@ func doGroup(ctx *Request) {
 	statusId := 0
 	birthId := 0
 	joinId := 0
+	interestId := 0
+	likeId := 0
 	otherFilters := false
 
 	for _, kv := range ctx.Args {
@@ -715,6 +721,7 @@ func doGroup(ctx *Request) {
 					return
 				}
 				otherFilters = true
+				interestId = int(ix)
 				iterators = append(iterators, InterestStrings.GetMap(ix))
 			case "likes":
 				n, err := strconv.Atoi(sval)
@@ -730,6 +737,7 @@ func doGroup(ctx *Request) {
 					return
 				}
 				otherFilters = true
+				likeId = n
 				iterators = append(iterators, bitmap.AndLikes([]*bitmap3.Likes{w}))
 			case "query_id":
 				// ignore
@@ -988,7 +996,30 @@ func doGroup(ctx *Request) {
 				return true
 			}
 			if groupBy&(GroupByCity|GroupByCountry) != 0 {
-				bitmap.Loop(bitmap.NewAndBitmap(iterators), mapper)
+				groupsCacheMtx.Lock()
+				key := GroupCacheKey{
+					groupBy:    groupBy,
+					cityId:     cityId,
+					countryId:  countryId,
+					sexId:      sexId,
+					statusId:   statusId,
+					birthId:    birthId,
+					joinId:     joinId,
+					interestId: interestId,
+					likeId:     likeId,
+				}
+				if cache, ok := groupsCache[key]; ok {
+					copy(groups, cache)
+					groupsCacheMtx.Unlock()
+				} else {
+					groupsCacheMtx.Unlock()
+					bitmap.Loop(bitmap.NewAndBitmap(iterators), mapper)
+					groupsCacheMtx.Lock()
+					cp := make([]groupCounter, len(groups))
+					copy(cp, groups)
+					groupsCache[key] = cp
+					groupsCacheMtx.Unlock()
+				}
 			} else {
 				/*
 					if nullIt != nil {
