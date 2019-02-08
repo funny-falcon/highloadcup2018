@@ -3,6 +3,8 @@ package main
 import (
 	"archive/zip"
 	"bufio"
+	"compress/flate"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -48,6 +50,129 @@ type AccountIn struct {
 type Like struct {
 	Id int32 `json:"id"`
 	Ts int32 `json:"ts"`
+}
+
+type wrt []byte
+
+func (wr *wrt) Int32(i int32) {
+	*wr = append(*wr, byte(i), byte(i>>8), byte(i>>16), byte(i>>24))
+}
+
+func (wr *wrt) Byte(i byte) {
+	*wr = append(*wr, i)
+}
+
+func (wr *wrt) String(s string) {
+	wr.Byte(byte(len(s)))
+	*wr = append(*wr, s...)
+}
+
+var wr = make(wrt, 0, 4096)
+
+func serializeAcc(w io.Writer, accin *AccountIn) {
+	wr.Int32(0)
+	wr.Int32(accin.Id)
+	wr.String(accin.Email)
+	wr.String(accin.Fname)
+	wr.String(accin.Sname)
+	wr.String(accin.Phone)
+	wr.String(accin.Sex)
+	wr.Int32(accin.Birth)
+	wr.String(accin.Country)
+	wr.String(accin.City)
+	wr.Int32(accin.Joined)
+	wr.String(accin.Status)
+	wr.Byte(byte(len(accin.Interests)))
+	for _, v := range accin.Interests {
+		wr.String(v)
+	}
+	wr.Int32(accin.Premium.Start)
+	wr.Int32(accin.Premium.Finish)
+	wr.Byte(byte(len(accin.Likes)))
+	for _, v := range accin.Likes {
+		wr.Int32(v.Id)
+		wr.Int32(v.Ts)
+	}
+	binary.LittleEndian.PutUint32(wr[:4], uint32(len(wr)-4))
+	_, err := w.Write(wr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if len(wr) > 4096 {
+		log.Fatalf("too big: %d", len(wr))
+	}
+	wr = wr[:0]
+}
+
+type rdr struct {
+	b []byte
+	l int
+}
+
+func (rd *rdr) Int32(i *int32) {
+	*i = int32(binary.LittleEndian.Uint32(rd.b[rd.l:]))
+	rd.l += 4
+}
+
+func (rd *rdr) Byte(i *byte) {
+	*i = rd.b[rd.l]
+	rd.l++
+}
+
+func (rd *rdr) String(s *string) {
+	l := rd.b[rd.l]
+	*s = string(rd.b[rd.l+1 : rd.l+1+int(l)])
+	rd.l += 1 + int(l)
+}
+
+var rd = rdr{b: make([]byte, 8192)}
+
+func deserializeAcc(r io.Reader, accin *AccountIn) bool {
+	*accin = AccountIn{}
+	_, err := io.ReadFull(r, rd.b[:4])
+	if err != nil {
+		if err == io.EOF {
+			return false
+		}
+		log.Fatal(err)
+	}
+	l := binary.LittleEndian.Uint32(rd.b)
+	if l > uint32(len(rd.b)) {
+		log.Fatalf("l: %d", l)
+	}
+	_, err = io.ReadFull(r, rd.b[:l])
+	if err != nil {
+		log.Fatal(err)
+	}
+	rd.l = 0
+	rd.Int32(&accin.Id)
+	rd.String(&accin.Email)
+	rd.String(&accin.Fname)
+	rd.String(&accin.Sname)
+	rd.String(&accin.Phone)
+	rd.String(&accin.Sex)
+	rd.Int32(&accin.Birth)
+	rd.String(&accin.Country)
+	rd.String(&accin.City)
+	rd.Int32(&accin.Joined)
+	rd.String(&accin.Status)
+	var b byte
+	rd.Byte(&b)
+	accin.Interests = make([]string, b)
+	for i := range accin.Interests {
+		rd.String(&accin.Interests[i])
+	}
+	rd.Int32(&accin.Premium.Start)
+	rd.Int32(&accin.Premium.Finish)
+	rd.Byte(&b)
+	accin.Likes = make([]Like, b)
+	for i := range accin.Likes {
+		var v Like
+		rd.Int32(&v.Id)
+		rd.Int32(&v.Ts)
+		accin.Likes[i] = v
+	}
+	return true
 }
 
 func loadAccount(iter *jsoniter.Iterator, accin *AccountIn) error {
@@ -163,64 +288,91 @@ func Load() {
 	}
 	optfile.Close()
 
-	rdr, err := zip.OpenReader(*path + "data.zip")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer rdr.Close()
+	accChan := make(chan AccountIn, 16*1024)
+
 	debug.SetGCPercent(5)
-	sema := make(chan int, 1)
 	var wg sync.WaitGroup
-	var compactMtx sync.RWMutex
-	for _nf, _f := range rdr.File {
+	if sfile, err := os.Open(*path + "data.serialize"); err != nil {
+		if !os.IsNotExist(err) {
+			log.Fatal(err)
+		}
+		sfile, err := os.Create(*path + "data.serialize")
+		if err != nil {
+			log.Fatal(err)
+		}
 		wg.Add(1)
-		nf, f := _nf, _f
+		serChan := make(chan AccountIn, 16*1024)
 		go func() {
-			sema <- 1
-			compactMtx.RLock()
-			defer func() {
-				compactMtx.RUnlock()
-				<-sema
-				wg.Done()
-			}()
-			rc, err := f.Open()
+			defer wg.Done()
+			defer sfile.Close()
+			sbuf := bufio.NewWriterSize(sfile, 32*1024)
+			defer sbuf.Flush()
+			wr, _ := flate.NewWriter(sbuf, 1)
+			defer wr.Close()
+			for accin := range serChan {
+				serializeAcc(wr, &accin)
+			}
+		}()
+		go func() {
+			rdr, err := zip.OpenReader(*path + "data.zip")
 			if err != nil {
 				log.Fatal(err)
 			}
-			defer rc.Close()
-			iter := jsoniter.Parse(jsonConfig, rc, 256*1024)
-			if attr := iter.ReadObject(); attr != "accounts" {
-				log.Fatal("No accounts ", attr, iter.Error)
-			}
-			for iter.ReadArray() {
-				var accin AccountIn
-				if err := loadAccount(iter, &accin); err != nil {
-					iter.Error = err
-					break
+			defer rdr.Close()
+			var accin AccountIn
+			for _, f := range rdr.File {
+				rc, err := f.Open()
+				if err != nil {
+					log.Fatal(err)
 				}
-				//iter.ReadVal(&accin)
+				defer rc.Close()
+				iter := jsoniter.Parse(jsonConfig, rc, 256*1024)
+				if attr := iter.ReadObject(); attr != "accounts" {
+					log.Fatal("No accounts ", attr, iter.Error)
+				}
+				for iter.ReadArray() {
+					accin = AccountIn{}
+					if err := loadAccount(iter, &accin); err != nil {
+						iter.Error = err
+						break
+					}
+					//iter.ReadVal(&accin)
+					if iter.Error != nil {
+						break
+					}
+					if outfile != nil {
+						fmt.Fprintf(outfile, "%+v\n", &accin)
+					}
+					serChan <- accin
+					accChan <- accin
+				}
 				if iter.Error != nil {
-					break
+					log.Fatal("Error reading accounts: ", iter.Error)
 				}
-				if outfile != nil {
-					fmt.Fprintf(outfile, "%+v\n", &accin)
-				}
-				InsertAccount(&accin)
 			}
-			if iter.Error != nil {
-				log.Fatal("Error reading accounts: ", iter.Error)
-			}
-			if (nf+1)%2 == 0 {
-				compactMtx.RUnlock()
-				compactMtx.Lock()
-				Compact()
-				compactMtx.Unlock()
-				compactMtx.RLock()
-			}
+			close(serChan)
+			close(accChan)
 		}()
+	} else {
+		go func() {
+			defer sfile.Close()
+			sbuf := bufio.NewReaderSize(sfile, 32*1024)
+			rd := flate.NewReader(sbuf)
+			defer rd.Close()
+			var acc AccountIn
+			for deserializeAcc(rd, &acc) {
+				accChan <- acc
+			}
+			close(accChan)
+		}()
+	}
+
+	for accin := range accChan {
+		InsertAccount(&accin)
 	}
 	wg.Wait()
 	RefreshIndexes()
+	Compact()
 	debug.SetGCPercent(30)
 
 	fmt.Println("LikesAlloc ", bitmap.LikesAlloc.TotalAlloc, bitmap.LikesAlloc.TotalFree,
