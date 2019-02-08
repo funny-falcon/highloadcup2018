@@ -64,3 +64,11 @@ func (mi InterestMask) IntersectCount(mo InterestMask) uint32 {
 	return uint32(bits.OnesCount64(mi[0]&mo[0]) +
 		bits.OnesCount64(mi[1]&mo[1]))
 }
+
+func (mi InterestMask) Count() uint32 {
+	return uint32(bits.OnesCount64(mi[0]) + bits.OnesCount64(mi[1]))
+}
+
+func (mi InterestMask) Contains(mo InterestMask) bool {
+	return mi[0]&mo[0] == mo[0] && mi[1]&mo[1] == mo[1]
+}

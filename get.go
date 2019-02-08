@@ -393,31 +393,37 @@ func doFilter(ctx *Request) {
 					return
 				}
 				maps = append(maps, &BirthYearIndexes[year-1950])
-			case "interests_contains", "interests_any":
+			case "interests_any":
 				interests := strings.Split(sval, ",")
 				iters := make([]bitmap.IBitmap, 0, len(interests))
 				for _, interest := range interests {
 					ix := InterestStrings.Find(interest)
 					if ix == 0 {
-						if skey == "interests_contains" {
-							emptyRes = true
-							return
-						}
 						continue
 					}
 					iters = append(iters, InterestStrings.GetMap(ix))
 				}
 				if len(iters) == 0 {
-					if skey == "interests_any" {
-						emptyRes = true
-					}
+					emptyRes = true
 					return
 				}
-				if skey == "interests_any" {
-					maps = append(maps, bitmap.NewOrBitmap(iters, &r))
-				} else {
-					maps = append(maps, iters...)
+				maps = append(maps, bitmap.NewOrBitmap(iters, &r))
+			case "interests_contains":
+				interests := strings.Split(sval, ",")
+				iters := make([]bitmap.IBitmap, 0, len(interests))
+				for _, interest := range interests {
+					ix := InterestStrings.Find(interest)
+					if ix == 0 {
+						emptyRes = true
+						return
+					}
+					iters = append(iters, InterestStrings.GetMap(ix))
 				}
+				if len(iters) == 0 {
+					emptyRes = true
+					return
+				}
+				maps = append(maps, iters...)
 			case "likes_contains":
 				likesStrs := strings.Split(val, ",")
 				likesMaps := make([]*bitmap.Likes, 0, len(likesStrs))
