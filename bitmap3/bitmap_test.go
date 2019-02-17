@@ -63,15 +63,15 @@ func TestBitmap_huge(t *testing.T) {
 				andDumb := intersectDumb(dumb)
 				orDumb := unionDumb(dumb)
 				andMap := bitmap3.NewAndBitmap(imaps)
-				orMap := bitmap3.NewOrBitmap(imaps)
+				orMap := bitmap3.NewOrBitmap(imaps, nil)
 				equal(t, andDumb, andMap)
 				equal(t, orDumb, orMap)
 
 				if k >= 3 {
 					andOrDumb := intersectDumb([]dumpmap{unionDumb(dumb[:2]), unionDumb(dumb[2:])})
 					andOrMap := bitmap3.NewAndBitmap([]bitmap3.IBitmap{
-						bitmap3.NewOrBitmap(imaps[:2]),
-						bitmap3.NewOrBitmap(imaps[2:]),
+						bitmap3.NewOrBitmap(imaps[:2], nil),
+						bitmap3.NewOrBitmap(imaps[2:], nil),
 					})
 					equal(t, andOrDumb, andOrMap)
 				}

@@ -1,7 +1,6 @@
 package bitmap3
 
 import (
-	"math/bits"
 	"sort"
 	"sync"
 	"unsafe"
@@ -55,6 +54,7 @@ func (r RawWithMap) Loop(f func([]int32) bool) {
 	}
 }
 
+/*
 func NewNotBitmap(b IBitmap) IBitmap {
 	r := Materialize(b)
 	for i, v := range r.L3 {
@@ -66,6 +66,7 @@ func NewNotBitmap(b IBitmap) IBitmap {
 	r.Size = uint32(len(r.L3)*64) - r.Size
 	return r
 }
+*/
 
 type AndBitmap struct {
 	Maps []IBitmap
@@ -337,15 +338,16 @@ func (bm *LazyOrBitmap) Has(ix int32) bool {
 
 func Materialize(imap IBitmap) *Bitmap {
 	res := Bitmap{}
-	copy(res.L2[:], imap.GetL2()[:])
 	if bl, ok := imap.(*Bitmap); ok {
-		copy(res.L3[:], bl.L3[:])
+		copy(res.L2[:], imap.GetL2()[:])
+		copy(res.L2Ptr[:], bl.L2Ptr[:])
 		res.Size = bl.Size
 	} else {
 		imap.LoopBlock(func(span int32, bl uint64) bool {
 			if bl != 0 {
-				res.L3[span/64] = bl
-				res.Size += uint32(bits.OnesCount64(bl))
+				res.SetBlock(span, bl)
+				//res.L3[span/64] = bl
+				//res.Size += uint32(bits.OnesCount64(bl))
 			}
 			return true
 		})

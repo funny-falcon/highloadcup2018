@@ -1,30 +1,103 @@
 package bitmap3
 
-import "unsafe"
+import (
+	"math/bits"
+	"unsafe"
+)
 
 type Bitmap struct {
 	Size uint32
 	L2   [384]uint64
-	L3   [24576]uint64
+
+	L2Ptr [384]*[64]uint64
 }
 
 const UpLimit = (1 << 20) | (1 << 19)
 
 func (bm *Bitmap) Set(ix int32) {
-	if Set(bm.L3[:], ix) {
+	p := ix / (64 * 64)
+	x := bm.L2[p]
+	lptr := bm.L2Ptr[p]
+	bit := uint64(1) << uint32((ix/64)&63)
+	if x&bit == 0 {
+		x |= bit
+		bm.L2[p] = x
 		bm.Size++
-		Set(bm.L2[:], ix/64)
+		if lptr == nil {
+			nlptr := make([]uint64, 1)
+			Set(nlptr[:1], ix&63)
+			bm.L2Ptr[p] = (*[64]uint64)(unsafe.Pointer(&nlptr[0]))
+			return
+		}
+		k := bits.OnesCount64(x)
+		nlptr := make([]uint64, k)
+		i := bits.OnesCount64(x & (bit - 1))
+		copy(nlptr[:i], lptr[:i])
+		copy(nlptr[i+1:k], lptr[i:k-1])
+		Set(nlptr[i:i+1], ix&63)
+		bm.L2Ptr[p] = (*[64]uint64)(unsafe.Pointer(&nlptr[0]))
+	} else {
+		i := bits.OnesCount64(x & (bit - 1))
+		if Set(lptr[i:i+1], ix&63) {
+			bm.Size++
+		}
+	}
+}
+
+func (bm *Bitmap) SetBlock(ix int32, bl uint64) {
+	p := ix / (64 * 64)
+	x := bm.L2[p]
+	lptr := bm.L2Ptr[p]
+	bit := uint64(1) << uint32((ix/64)&63)
+	if x&bit == 0 {
+		x |= bit
+		bm.L2[p] = x
+		bm.Size += uint32(bits.OnesCount64(bl))
+		if lptr == nil {
+			nlptr := make([]uint64, 1)
+			nlptr[0] = bl
+			bm.L2Ptr[p] = (*[64]uint64)(unsafe.Pointer(&nlptr[0]))
+			return
+		}
+		k := bits.OnesCount64(x)
+		nlptr := make([]uint64, k)
+		i := bits.OnesCount64(x & (bit - 1))
+		copy(nlptr[:i], lptr[:i])
+		copy(nlptr[i+1:k], lptr[i:k-1])
+		nlptr[i] = bl
+		bm.L2Ptr[p] = (*[64]uint64)(unsafe.Pointer(&nlptr[0]))
+	} else {
+		panic("NO")
 	}
 }
 
 func (bm *Bitmap) Unset(ix int32) {
-	if Unset(bm.L3[:], ix) {
+	p := ix / (64 * 64)
+	x := bm.L2[p]
+	lptr := bm.L2Ptr[p]
+	bit := uint64(1) << uint32((ix/64)&63)
+	if lptr == nil || x&bit == 0 {
+		return
+	}
+	i := bits.OnesCount64(x & (bit - 1))
+	if Unset(lptr[i:i+1], ix&63) {
 		bm.Size--
 	}
 }
 
 func (bm *Bitmap) Has(ix int32) bool {
-	return ix < UpLimit && Has(bm.L2[:], ix/64) && Has(bm.L3[:], ix)
+	if ix > UpLimit {
+		return false
+	}
+	p := ix / (64 * 64)
+	x := bm.L2[p]
+	bit := uint64(1) << uint32((ix/64)&63)
+	if x&bit == 0 {
+		return false
+	}
+	i := bits.OnesCount64(x & (bit - 1))
+	lptr := bm.L2Ptr[p]
+	return Has(lptr[:], int32(i*64)+(ix&63))
 }
 
 func (bm *Bitmap) LoopBlock(f func(int32, uint64) bool) {
@@ -35,8 +108,10 @@ func (bm *Bitmap) LoopBlock(f func(int32, uint64) bool) {
 			continue
 		}
 		l2ixb := l2ix * 64
-		for _, l3ix := range Unroll(l2v, l2ixb, &l2u) {
-			l3v := bm.L3[l3ix]
+		lptr := bm.L2Ptr[l2ix]
+		k := bits.OnesCount64(l2v) - 1
+		for i, l3ix := range Unroll(l2v, l2ixb, &l2u) {
+			l3v := lptr[k-i]
 			if l3v != 0 && !f(l3ix*64, l3v) {
 				return
 			}
@@ -58,7 +133,18 @@ func (bm *Bitmap) GetBlock(span int32) uint64 {
 		}
 	*/
 	//return bm.L3[span/64]
-	return *arefu64(uintptr(unsafe.Pointer(&bm.L3)), int(span/64))
+	if span > UpLimit {
+		return 0
+	}
+	p := span / (64 * 64)
+	x := bm.L2[p]
+	bit := uint64(1) << uint32((span/64)&63)
+	if x&bit == 0 {
+		return 0
+	}
+	i := bits.OnesCount64(x & (bit - 1))
+	lptr := bm.L2Ptr[p]
+	return lptr[i]
 }
 
 func (bm *Bitmap) Count() uint32 {

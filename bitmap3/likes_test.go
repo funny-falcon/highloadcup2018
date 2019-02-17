@@ -31,7 +31,7 @@ func TestAndLikes(t *testing.T) {
 	likes3.SetTs(1, 12, 1)
 	likes3.SetTs(1, 15, 1)
 
-	correct := []int32{12, 6}
+	correct := bitmap3.RawUids([]int32{12, 6})
 	require.Equal(t, correct, bitmap3.AndLikes([]*bitmap3.Likes{likes1, likes2, likes3}))
 	require.Equal(t, correct, bitmap3.AndLikes([]*bitmap3.Likes{likes1, likes3, likes2}))
 	require.Equal(t, correct, bitmap3.AndLikes([]*bitmap3.Likes{likes2, likes1, likes3}))
